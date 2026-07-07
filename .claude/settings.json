@@ -1,0 +1,45 @@
+{
+  "disableAllHooks": false,
+  "permissions": {
+    "deny": [],
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(npm test *)",
+      "Bash(npm run lint *)",
+      "Bash(npm run build *)",
+      "Bash(docker-compose build *)",
+      "Bash(npx playwright test *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(git worktree *)",
+      "Bash(py -0*)",
+      "Bash(py --list*)",
+      "Bash(py -V*)",
+      "Bash(py --version*)",
+      "Bash(python --version*)",
+      "Bash(python3 --version*)",
+      "Bash(node --version*)",
+      "Bash(npm --version*)",
+      "Bash(git --version*)",
+      "Bash(pip --version*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);const cmd=(i.tool_input&&i.tool_input.command)||'';const re=/(^|[;&|\\n]\\s*)(ls|dir|gci|Get-ChildItem|cat|type|gc|Get-Content|find)\\b/i;if(re.test(cmd)){console.error('[Hook] Use a dedicated tool instead of shell listing/reading commands: Glob (file/dir search), Grep (content search), Read (file contents). Blocked: ls/dir/gci/Get-ChildItem/cat/type/gc/Get-Content/find.');process.exit(2)}process.exit(0)}catch(e){process.exit(0)}})\""
+          }
+        ],
+        "description": "Block ls/dir/gci/Get-ChildItem/cat/type/gc/Get-Content/find in favor of Glob, Grep, and Read"
+      }
+    ]
+  }
+}

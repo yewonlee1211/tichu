@@ -1,0 +1,10 @@
+services:
+  ai:
+    build:
+      context: ./ai
+      dockerfile: Dockerfile
+    volumes:
+      - ./ai:/app
+    working_dir: /app
+    tty: true
+    stdin_open: true
