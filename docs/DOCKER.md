@@ -24,11 +24,16 @@ Docker에 익숙하지 않은 사람이 읽어도 이해할 수 있도록, 개�
 ```
 tichu-game/
 ├── docker-compose.yml   # 컨테이너를 어떻게 띄울지 정의 (루트에 위치)
+├── .gitignore
 └── ai/
     ├── Dockerfile        # 이미지를 어떻게 만들지 정의
     ├── .dockerignore     # 이미지 빌드 시 제외할 파일 목록
+    ├── pyproject.toml    # 의존성/패키지 메타데이터, pytest 설정
+    ├── RULES.md          # Tichu 룰 명세(구현 기준 문서)
+    ├── tichu_env/        # 규칙 엔진(카드/조합/상태/스코어링/환경)
     └── tests/
-        └── test_environment_smoke.py   # 환경이 제대로 도는지 확인하는 최소 테스트
+        ├── test_environment_smoke.py   # 환경이 제대로 도는지 확인하는 최소 테스트
+        └── test_cards.py               # 카드/덱 모델 단위 테스트
 ```
 
 ### `ai/Dockerfile`
@@ -41,12 +46,15 @@ WORKDIR /app
 RUN pip install --no-cache-dir numpy pytest pytest-cov \
     && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
+ENV PYTHONPATH=/app
+
 CMD ["sleep", "infinity"]
 ```
 
 - `FROM python:3.12-slim`: Python 3.12가 설치된 가벼운 리눅스 이미지에서 시작
 - `WORKDIR /app`: 컨테이너 내부 작업 디렉터리를 `/app`으로 지정
 - `RUN pip install ...`: numpy/pytest/pytest-cov는 일반 PyPI에서, torch는 **CPU 전용 인덱스**에서 설치 (GPU 없는 환경이므로 용량이 훨씬 작은 CPU 빌드를 선택)
+- `ENV PYTHONPATH=/app`: `ai/tichu_env`, `ai/agents` 등 코드 패키지를 별도 설치 없이 바로 `import`할 수 있게 함. `ai/`가 빌드 타임이 아니라 **런타임에 bind mount**되기 때문에(2번 참고), 빌드 시점엔 아직 패키지 코드가 없어 `pip install -e .` 같은 방식은 쓸 수 없음 — 대신 경로만 미리 등록해두는 방식
 - `CMD ["sleep", "infinity"]`: 컨테이너가 할 일을 마치고 바로 꺼지지 않고 계속 켜져 있도록 유지. 이렇게 해야 나중에 `docker compose exec`로 그 안에 명령을 내릴 수 있음
 
 ### `docker-compose.yml`
@@ -113,4 +121,4 @@ tests/test_environment_smoke.py::test_torch_is_importable_and_computes PASSED
 
 ## 7. 다음 단계
 
-Docker 환경 검증이 끝났으므로, 이어지는 작업은 `.claude/plans/tichu-ai-selfplay.plan.md`의 **Phase 0 Task 1(프로젝트 초기화 — `pyproject.toml`, `git init`, `.gitignore`)**부터 컨테이너 내부에서 진행한다. 저장소는 아직 git이 초기화되지 않은 상태다.
+Docker 환경 검증 및 Task 1(프로젝트 초기화: `pyproject.toml`, `.gitignore`)이 끝났고, Task 2(카드/덱 모델)까지 완료된 상태다. 이어지는 작업은 `.claude/plans/tichu-ai-selfplay.plan.md`의 **Phase 1 Task 3(조합 판정/비교)**부터 컨테이너 내부에서 TDD로 진행한다.

@@ -73,7 +73,8 @@ def test_shuffled_deck_contains_same_cards_as_ordered_deck():
 )
 def test_card_point_values(rank, expected_points):
     # Arrange
-    suit = Suit.SPECIAL if rank.value >= Rank.PHOENIX.value or rank in (Rank.DOG, Rank.MAHJONG) else Suit.SWORD
+    special_ranks = {Rank.DOG, Rank.MAHJONG, Rank.PHOENIX, Rank.DRAGON}
+    suit = Suit.SPECIAL if rank in special_ranks else Suit.SWORD
     card = Card(rank=rank, suit=suit)
 
     # Act / Assert

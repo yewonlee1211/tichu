@@ -7,4 +7,10 @@ WORKDIR /app
 RUN pip install --no-cache-dir numpy pytest pytest-cov \
     && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
+# ai/ 전체가 compose에서 /app에 bind mount되므로, 빌드 시점에는 tichu_env 등
+# 패키지 코드가 아직 존재하지 않는다(pyproject.toml의 editable install은 빌드
+# 시점에 패키지를 찾지 못해 무의미함). 대신 /app을 PYTHONPATH에 둬서 bind mount된
+# 어떤 패키지(tichu_env, agents, training, eval)든 재설치 없이 바로 import되게 한다.
+ENV PYTHONPATH=/app
+
 CMD ["sleep", "infinity"]
