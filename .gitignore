@@ -5,6 +5,7 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+.coverage
 
 # AI training artifacts
 ai/checkpoints/
@@ -20,3 +21,6 @@ build/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local work log (personal context-recovery notes, not shared)
+.claude/worklog/

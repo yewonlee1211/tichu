@@ -40,6 +40,18 @@
         ],
         "description": "Block ls/dir/gci/Get-ChildItem/cat/type/gc/Get-Content/find in favor of Glob, Grep, and Read"
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "TodoWrite",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);const todos=(i.tool_input&&i.tool_input.todos)||[];const allDone=todos.length>0&&todos.every(t=>t.status==='completed');if(!allDone){process.exit(0)}const {execSync}=require('child_process');let status='';try{status=execSync('git status --porcelain',{encoding:'utf8'})}catch(e){process.exit(0)}if(status.trim().length>0){console.log('[commit-checkpoint] Todo 항목이 모두 완료되었고 커밋되지 않은 변경 사항이 있습니다. commit-checkpoint 스킬로 커밋 여부를 확인해 보세요.')}}catch(e){}process.exit(0)})\""
+          }
+        ],
+        "description": "Suggest a commit checkpoint when a TodoWrite update marks every task completed and the tree is dirty"
+      }
     ]
   }
 }
