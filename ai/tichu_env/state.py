@@ -221,7 +221,8 @@ def play_combo(state: GameState, player: int, cards: Sequence[Card], wish: Rank 
     finished_order = state.finished_order
     if not remaining_hand:
         finished_order = finished_order + (player,)
-    round_over = len(finished_order) >= 3
+    double_win = len(finished_order) == 2 and PARTNER[finished_order[0]] == finished_order[1]
+    round_over = len(finished_order) >= 3 or double_win
 
     if is_dog:
         next_leader = _next_leader_after_dog(player, finished_order)

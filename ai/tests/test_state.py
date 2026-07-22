@@ -284,6 +284,26 @@ def test_round_ends_when_third_player_finishes():
     assert state.phase is Phase.ROUND_OVER
 
 
+def test_round_ends_immediately_on_a_double_win_before_a_third_player_finishes():
+    # Seats 1 and 3 are partners. If 1 already finished and 3 finishes next,
+    # that is a double win (both members of one team out before anyone on
+    # the other team) -- the round must end right there, not wait for a
+    # third finisher. Continuing to play in this state is also unsafe: it
+    # can leave a later Dragon-trick winner with no opposing player left to
+    # gift the trick to, since both opponents already finished.
+    state = make_playing_state(
+        {3: [card(Rank.NINE)]},
+        current_player=3,
+        trick_leader=3,
+        finished_order=(1,),
+    )
+
+    state = play_combo(state, 3, [card(Rank.NINE)])
+
+    assert state.finished_order == (1, 3)
+    assert state.phase is Phase.ROUND_OVER
+
+
 # ---------------------------------------------------------------------------
 # Mahjong wish
 # ---------------------------------------------------------------------------
@@ -425,25 +445,6 @@ def test_trick_resolves_to_winner_after_all_others_pass():
     # lead falls to their partner (seat 2) instead.
     assert state.trick_leader == 2
     assert state.current_best is None
-
-
-def test_trick_leader_fallback_when_winner_and_partner_both_finished_goes_counter_clockwise():
-    # Seat 2 (partner of seat 0) is already out before this trick starts.
-    state = make_playing_state(
-        {0: [card(Rank.FIVE)], 1: [card(Rank.SIX)], 3: [card(Rank.SEVEN)]},
-        current_player=0,
-        trick_leader=0,
-        finished_order=(2,),
-    )
-    # Seat 0 wins the trick with their last card and goes out too, so both
-    # members of their team are now finished. The lead must fall to the
-    # nearest still-active seat going counter-clockwise from seat 0 (seat 3),
-    # using the same logic as the Dog's partner-fallback -- not clockwise.
-    state = play_combo(state, 0, [card(Rank.FIVE)])
-    state = pass_turn(state, 1)
-    state = pass_turn(state, 3)
-
-    assert state.trick_leader == 3
 
 
 def test_dragon_win_requires_choosing_an_opponent():
