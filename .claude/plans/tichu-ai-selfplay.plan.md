@@ -79,22 +79,28 @@
 - **Validate**: 휴리스틱 vs 랜덤 대국에서 휴리스틱 승률이 유의미하게 높음을 확인하는 통합 테스트(환경 정합성 간접 검증)
 
 ### Phase 4 — Self-Play 학습
-#### Task 9: 정책/가치 네트워크
+#### Task 9: 정책/가치 네트워크 ✅ 완료
 - **Action**: `policy_network.py`에 관측 인코딩을 입력으로 받아 각 후보 액션 점수(및 상태 가치)를 출력하는 PyTorch 모델 정의(가변 개수 후보 액션 처리 — 액션 임베딩 후 점수화 방식 추천)
-- **Validate**: 순전파 shape 테스트, 그래디언트 흐름 확인(단순 backward 스모크 테스트)
+- **구현**: `TichuPolicyValueNet` — `state_encoder`(OBS_DIM → embedding), `action_encoder`(ACTION_DIM → embedding, 후보별 독립 인코딩), `action_scorer`(state+action 임베딩 concat → 로짓 1개), `value_head`(state 임베딩 → 스칼라). `forward(obs, action_vectors)`는 단일 관측 + 가변 개수 후보 액션을 받아 `(action_logits, state_value)` 반환. `action_probabilities()`로 softmax 편의 제공
+- **Validate**: `tests/test_policy_network.py` 5개 테스트 — 순전파 shape(후보 수만큼 로짓 + 스칼라 가치), 후보 1개/0개 경계, softmax 합 1.0, 전 파라미터에 유한한 그래디언트 도달(backward 스모크). 전체 158 테스트 통과, 커버리지 95% 유지(`policy_network.py` 100%)
 
-#### Task 10: 자기대국 데이터 생성
+#### Task 10: 자기대국 데이터 생성 ✅ 완료
 - **Action**: `self_play.py`에서 현재 정책(및 과거 체크포인트 풀)을 4석에 배치해 병렬로 게임을 생성하고 (state, action, reward) 궤적 수집
-- **Validate**: 지정한 게임 수만큼 생성되고 각 궤적의 길이/보상 합이 스코어링 로직과 일치하는지 검증
+- **구현**: 과거 체크포인트 풀은 아직 체크포인트가 존재하지 않으므로(Task 11 전) 이번 태스크 범위에서 제외 — 현재 네트워크를 4석 모두에 배치하는 미러 self-play로 시작(계획 Risks란의 "순수 Python 먼저 검증" 방침과 일치). `Transition`(observation, action_vectors, chosen_index, reward)과 `play_self_play_round`/`generate_self_play_games` 구현. 매 턴 `action_probabilities()`로 합법 액션 분포를 계산해 샘플링(탐색 필요 — argmax 아님). `reward`는 `TichuEnv.step`의 기존 관례(매 스텝 0.0, 종료 시에만 실제 값)를 그대로 따라 각 플레이어 궤적의 **마지막** 트랜지션에만 `score_round` 기반 팀 마진(자기 팀 점수 − 상대 팀 점수)을 기록
+- **Validate**: `tests/test_self_play.py` 5개 — 게임당 궤적 4개 생성, 모든 `chosen_index`가 해당 스텝의 후보 범위 내, 마지막 트랜지션 외 보상 0, 같은 팀 두 명은 동일한 라운드 마진을 받고 상대 팀과는 부호가 반대(zero-sum), `Transition` 불변성. 전체 163 테스트 통과, 커버리지 95% 유지(`self_play.py` 98%, 미커버 라인은 "플레이어가 한 번도 턴을 못 받은" 사실상 도달 불가능한 방어 분기)
 
-#### Task 11: 학습 루프
+#### Task 11: 학습 루프 ✅ 완료
 - **Action**: `train.py`에서 PPO(또는 단순 REINFORCE로 시작 후 필요시 PPO 전환) 기반 학습 루프 구현, 주기적 체크포인트 저장, 승률/loss 메트릭 기록
-- **Validate**: 짧은 스모크 러닝(수십 iteration)이 크래시 없이 완료되고 메트릭 파일이 생성됨
+- **결정**: RL 알고리즘은 사용자와 상의해 REINFORCE(+가치망 베이스라인)로 시작하기로 결정(계획의 Open Questions에 명시된 대로 Task 11 착수 시점에 결정) — 필요 시 이후 PPO로 전환 가능하도록 데이터 구조는 알고리즘에 종속되지 않게 유지(Task 10의 Transition은 old-policy log-prob 없이 (state, action, reward)만 저장)
+- **구현**: `compute_reinforce_loss` — 라운드 내 무할인 Monte Carlo return(각 궤적의 마지막 트랜지션 보상을 그 궤적 전체의 return으로 사용, `training/self_play.py`의 관례와 일치) 기반 정책 손실(-log_prob × advantage, advantage = return − V(s).detach())과 가치 손실(MSE) 계산. `train()`은 매 iteration마다 on-policy self-play 데이터를 새로 생성해 1회 gradient step 수행, CSV(`iteration, games, mean_return, policy_loss, value_loss`)에 메트릭 기록, `checkpoint_every` 간격(+마지막 iteration 항상)으로 `checkpoints/checkpoint_{iter}.pt` 저장. `python -m training.train --iterations N ...` CLI 제공
+- **Validate**: `tests/test_train.py` 6개 — 지정 iteration 수만큼 크래시 없이 완주, iteration당 메트릭 행 1개씩 기록, 마지막 iteration 항상 체크포인트, 설정한 간격에서만 체크포인트 생성, 저장된 체크포인트가 동일 구조 네트워크에 정확히 복원됨, 학습 후 파라미터가 실제로 변함. CLI(`docker compose exec ai python -m training.train --iterations 5 ...`)로 실제 실행 확인(체크포인트+metrics.csv 생성 확인). 전체 169 테스트 통과, 전체 커버리지 94%(`train.py` 79% — 미커버 라인은 pytest로 실행하지 않는 argparse `_main()` CLI 진입점, CLI로 별도 수동 검증함)
 
 ### Phase 5 — 평가
-#### Task 12: 평가 하네스
+#### Task 12: 평가 하네스 ✅ 완료
 - **Action**: `arena.py`에서 최신 체크포인트 vs 휴리스틱 봇, 최신 vs 과거 체크포인트 간 다수 게임 실행 후 승률/Elo 산출
-- **Validate**: 학습이 진행됨에 따라 최신 체크포인트가 휴리스틱 대비 승률이 개선되는지 관찰(정량적 목표치는 Open Question으로 남김 — 개인 R&D 프로젝트 특성상 "개선 추세 확인"을 1차 목표로 설정)
+- **구현**: `load_checkpoint`(체크포인트 로드 + eval 모드), `policy_chooser`(기본 argmax — 탐색이 아니라 정책의 실제 실력을 측정하기 위함, `deterministic=False`로 샘플링도 가능), `heuristic_chooser`, `play_arena_round`/`run_arena`(팀 A=시트0,2 vs 팀 B=시트1,3, N게임 실행 후 승/패/무 집계), `_elo_diff_from_win_rate`(표준 performance-rating 공식으로 승률→Elo 추정, 0/1 경계는 클리핑해 무한대 방지). `python -m eval.arena --checkpoint latest --opponent heuristic` CLI 제공(`--checkpoint`/`--opponent`에 `latest` 키워드로 최신 체크포인트 자동 탐색 지원)
+- **버그 발견 및 수정**: 실제 체크포인트로 아레나를 대량 실행하던 중 크래시 발견 → `state.py`가 더블 아웃(한 팀 두 명이 3번째 아웃 전에 먼저 1·2등 차지) 시 라운드를 즉시 종료하지 않던 버그였음(Task 4 이후 두 차례 코드 리뷰에서도 놓쳤던 부분). `state.py`/`scoring.py`를 수정해 더블 아웃이 발생하는 즉시 라운드가 끝나도록 고침 — 상세 내용은 `ai/RULES.md` 5.6절에 기록. 이 수정으로 이제는 불가능해진 시나리오를 전제로 하던 기존 테스트 1개를 삭제(반시계 방향 리더 대체 로직 자체는 다른 테스트로 계속 커버됨)
+- **Validate**: `tests/test_arena.py` 11개(Elo 공식 경계/부호, `policy_chooser` 결정적/확률적 모드 모두 항상 합법수만 반환, 체크포인트 로드 후 파라미터 정확히 일치, `latest` 탐색 성공/실패, 휴리스틱이 랜덤 상대로 승률/Elo 모두 양수) 전부 통과. CLI로 실제 체크포인트 간 대국(휴리스틱 상대, 체크포인트 상대 둘 다) 실행 확인. 전체 180 테스트 통과, 커버리지 93%(`arena.py` 81% — 미커버는 argparse `_main()` CLI 진입점, CLI로 별도 수동 검증)
 
 ## Validation
 ```bash
@@ -120,13 +126,13 @@ uv run python -m eval.arena --checkpoint latest --opponent heuristic
 - **M1 구조를 M2에 맞추는 작업**(웹 서버가 이 Python 모델을 어떻게 호출할지: 추론 마이크로서비스 등)은 명시적으로 별도 계획으로 분리, 이번 계획 완료 후 착수
 
 ## Acceptance
-- [ ] Phase 0~5 모든 태스크 완료 (Phase 0~3 완료, Phase 4~5 남음)
-- [x] `pytest` 전체 통과, `tichu_env`/`agents` 커버리지 80%+ (153개 테스트, 95%)
-- [x] 휴리스틱 봇이 랜덤 봇 대비 유의미하게 높은 승률 기록(환경 정합성 간접 검증) — 100판 누적 팀 점수로 확인
-- [ ] self-play 학습이 크래시 없이 지정 iteration 수만큼 완주하고 체크포인트가 저장됨
-- [ ] 평가 하네스로 학습 진행에 따른 승률/Elo 추세를 관찰 가능
+- [x] Phase 0~5 모든 태스크 완료
+- [x] `pytest` 전체 통과, `tichu_env`/`agents` 커버리지 80%+ (180개 테스트, 전체 93%)
+- [x] 휴리스틱 봇이 랜덤 봇 대비 유의미하게 높은 승률 기록(환경 정합성 간접 검증) — 100판 누적 팀 점수 + 아레나 하네스 승률/Elo 양쪽으로 확인
+- [x] self-play 학습이 크래시 없이 지정 iteration 수만큼 완주하고 체크포인트가 저장됨 — REINFORCE+가치망 베이스라인으로 구현, CLI 스모크런으로 확인
+- [x] 평가 하네스로 학습 진행에 따른 승률/Elo 추세를 관찰 가능 — `eval/arena.py`, 체크포인트 vs 휴리스틱/체크포인트 vs 체크포인트 둘 다 CLI로 실행 확인
 - [x] 관측 인코딩에 은닉 정보 누출이 없음을 테스트로 보장
 - [x] 웹 연동(추론 서비스 등)은 이번 계획에 포함하지 않았음을 확인
 
 ---
-*Status: Phase 0~3(Task 1~8) 완료 — 규칙 엔진, 학습 환경, 베이스라인 에이전트. Phase 4~5(정책망/self-play/평가)는 다음 단계.*
+*Status: Phase 0~5(Task 1~12) 전부 완료 — 규칙 엔진, 학습 환경, 베이스라인 에이전트, 정책망, self-play 데이터 생성, REINFORCE 학습 루프, 평가 하네스. Task 12 검증 중 더블 아웃 라운드 종료 버그를 발견해 수정함(`ai/RULES.md` 5.6절 참고). 이 계획의 범위(웹사이트와 독립된 Python 시뮬레이터 + self-play 학습)는 여기서 마무리. M1 구조를 M2에 맞추는 작업은 Open Questions에 명시된 대로 별도 계획.*
