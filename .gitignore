@@ -10,6 +10,7 @@ venv/
 # AI training artifacts
 ai/checkpoints/
 ai/**/*.log
+ai/game_logs/
 
 # Node / web (future packages/)
 node_modules/
