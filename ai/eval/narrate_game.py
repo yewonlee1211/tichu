@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import random
-from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -64,9 +63,7 @@ def cards_str(cards: tuple[Card, ...]) -> str:
 
 
 def _score_actions(network: TichuPolicyValueNet, result: StepResult) -> list[tuple[Combo | None, float, float]]:
-    """Scores every legal action for `result`'s current player under `network`,
-    regardless of which chooser (policy or heuristic) actually acts this turn --
-    this always reflects "how the trained network would rate these options."
+    """Scores every legal action for `result`'s current player under `network`.
     Returns (combo, logit, probability) triples sorted best-first by logit."""
     combos = [combo for combo, _ in result.legal_actions]
     action_vectors = torch.as_tensor(np.stack([vec for _, vec in result.legal_actions]), dtype=torch.float32)
@@ -90,10 +87,17 @@ def narrate_round(
     env: TichuEnv,
     seat_choosers: dict[int, SeatChooser],
     seat_labels: dict[int, str],
-    scoring_network: TichuPolicyValueNet,
+    scoring_networks: dict[int, TichuPolicyValueNet],
+    team_tags: dict[int, str],
 ) -> list[str]:
     """Plays one round to completion and returns a Korean natural-language
-    narration of every action, trick resolution, and the final round result."""
+    narration of every action, trick resolution, and the final round result.
+
+    `scoring_networks` maps each seat to the network used to score *that seat's*
+    legal actions -- when both sides are trained checkpoints, each seat is scored
+    by its own network (its own honest evaluation of its own options); when the
+    opponent is the heuristic bot, every seat is scored by the one checkpoint
+    under test, since the heuristic has no network of its own."""
     lines: list[str] = []
     result = env.reset()
 
@@ -109,7 +113,7 @@ def narrate_round(
         player = result.player
         is_leading = state_before.current_best is None
 
-        scored_actions = _score_actions(scoring_network, result)
+        scored_actions = _score_actions(scoring_networks[player], result)
         combo = seat_choosers[player](result)
         turn_no += 1
 
@@ -129,7 +133,7 @@ def narrate_round(
             lines.append(f"    -> {extra}")
 
     lines.append("")
-    lines.extend(_describe_round_end(env.state, result.info["team_scores"], seat_labels))
+    lines.extend(_describe_round_end(env.state, result.info["team_scores"], seat_labels, team_tags))
     return lines
 
 
@@ -179,7 +183,9 @@ def _describe_aftermath(
     return notes
 
 
-def _describe_round_end(state: GameState, team_scores: tuple[int, int], seat_labels: dict[int, str]) -> list[str]:
+def _describe_round_end(
+    state: GameState, team_scores: tuple[int, int], seat_labels: dict[int, str], team_tags: dict[int, str]
+) -> list[str]:
     lines = ["## 라운드 종료"]
     finished = list(state.finished_order)
     fourth = next(p for p in range(4) if p not in finished)
@@ -198,79 +204,139 @@ def _describe_round_end(state: GameState, team_scores: tuple[int, int], seat_lab
             f"- 4등 {seat_labels[fourth]}의 남은 손패({cards_str(state.hands[fourth])})는 상대팀에게 넘어갑니다."
         )
 
-    lines.append(f"- 팀 점수(이번 라운드만): 0+2번 팀 {team_scores[0]:+d}점, 1+3번 팀 {team_scores[1]:+d}점")
+    lines.append(
+        f"- 팀 점수(이번 라운드만): 0+2번 팀({team_tags[0]}) {team_scores[0]:+d}점, "
+        f"1+3번 팀({team_tags[1]}) {team_scores[1]:+d}점"
+    )
     lines.append("- 티츄/그랜드 티츄 보너스: 없음 (이 환경은 티츄 콜을 아직 지원하지 않아 항상 콜하지 않은 것으로 처리됩니다)")
     return lines
 
 
-def build_preamble(checkpoint_path: Path, opponent: str, policy_seats: tuple[int, int], seed: int | None) -> list[str]:
-    other_seats = tuple(s for s in range(4) if s not in policy_seats)
-    seat_labels = _seat_labels(policy_seats)
-    return [
+def build_preamble(
+    team_a_desc: str,
+    team_b_desc: str,
+    team_a_seats: tuple[int, int],
+    team_b_seats: tuple[int, int],
+    seed: int,
+    opponent_is_policy: bool,
+) -> list[str]:
+    seat_labels = _seat_labels(team_a_seats)
+    lines = [
         "# Tichu AI 테스트 게임 로그",
         "",
-        f"- 체크포인트: {checkpoint_path}",
-        f"- 대결 구도: {seat_labels[policy_seats[0]]}, {seat_labels[policy_seats[1]]} = 학습된 정책망(AI) / "
-        f"{seat_labels[other_seats[0]]}, {seat_labels[other_seats[1]]} = {opponent}",
+        f"- A팀({seat_labels[team_a_seats[0]]}, {seat_labels[team_a_seats[1]]}): {team_a_desc}",
+        f"- B팀({seat_labels[team_b_seats[0]]}, {seat_labels[team_b_seats[1]]}): {team_b_desc}",
         "- 팀: 0번+2번 팀 vs 1번+3번 팀",
-        f"- 시드: {seed if seed is not None else '(무작위)'}",
+        f"- 시드: {seed}",
         "",
         "## 참고 (이 환경의 알려진 한계)",
         "- 그랜드 티츄 콜과 카드 교환은 아직 학습 대상이 아닙니다: 모든 플레이어가 그랜드 티츄를 자동으로 포기하고, "
         "각자 자신의 가장 낮은 카드 3장을 상대에게 기계적으로 나눠주는 고정 규칙을 씁니다.",
         "- (소)티츄 콜 기능 자체가 이 환경에는 없어 아무도 티츄를 부르지 않습니다.",
         "- 마작(1)을 냈을 때의 '소원 카드' 지정도 이 환경은 항상 사용하지 않습니다.",
-        "- AI가 실제로 판단하는 부분은 카드 교환이 끝난 뒤 각 트릭에서 무엇을 내고 언제 패스할지뿐입니다.",
+        "- 각 정책망이 실제로 판단하는 부분은 카드 교환이 끝난 뒤 각 트릭에서 무엇을 내고 언제 패스할지뿐입니다.",
         "- 드래곤으로 트릭을 이기면 원래는 누구에게 넘길지 선택해야 하지만, 이 환경은 자동으로 상대팀 중 아직 "
         "라운드에서 빠지지 않은 사람에게 넘깁니다.",
-        "- 매 차례마다 정책망(위 체크포인트)이 그 순간의 모든 합법 액션에 매긴 점수(logit/softmax 확률)를 함께 "
-        "적어둡니다. 휴리스틱 차례에도 참고용으로 항상 계산해서 보여주지만, 실제로 그 액션을 고르는 건 각 자리에 "
-        "배정된 봇(AI는 정책망 최댓값, 휴리스틱은 규칙 기반)입니다 -- '실제 선택'이 점수 1위가 아닐 수 있습니다.",
-        "",
     ]
+    if opponent_is_policy:
+        lines.append(
+            "- 매 차례마다 그 자리에 배정된 정책망 자신이 그 순간의 모든 합법 액션에 매긴 점수(logit/softmax "
+            "확률)를 함께 적어둡니다 -- A팀 차례는 A 체크포인트, B팀 차례는 B 체크포인트 기준입니다."
+        )
+    else:
+        lines.append(
+            "- 매 차례마다 정책망(A 체크포인트)이 그 순간의 모든 합법 액션에 매긴 점수(logit/softmax 확률)를 함께 "
+            "적어둡니다. 휴리스틱(B) 차례에도 참고용으로 항상 계산해서 보여주지만, 실제로 그 액션을 고르는 건 각 "
+            "자리에 배정된 봇(A는 정책망 최댓값, B는 규칙 기반)입니다 -- '실제 선택'이 점수 1위가 아닐 수 있습니다."
+        )
+    lines.append("")
+    return lines
 
 
-def _seat_labels(policy_seats: tuple[int, int]) -> dict[int, str]:
-    return {s: f"{s}번({'AI' if s in policy_seats else '휴리스틱'})" for s in range(4)}
+def _seat_labels(team_a_seats: tuple[int, int]) -> dict[int, str]:
+    return {s: f"{s}번({'A' if s in team_a_seats else 'B'})" for s in range(4)}
+
+
+def _team_tags(team_a_seats: tuple[int, int]) -> dict[int, str]:
+    team_a_index = 0 if 0 in team_a_seats else 1
+    return {team_a_index: "A", 1 - team_a_index: "B"}
+
+
+def _identifier(path: Path | None) -> str:
+    """Short filename-safe id for a player: 'heuristic', or '<run dir>_<checkpoint stem>'."""
+    if path is None:
+        return "heuristic"
+    return f"{path.parent.name}_{path.stem}"
 
 
 def _main() -> None:
     parser = argparse.ArgumentParser(
-        description="Play one Tichu round with a trained checkpoint vs. a baseline and write a "
-        "human-readable Korean narration of the game to a text file."
+        description="Play one Tichu round between two chosen players (checkpoints and/or the heuristic "
+        "bot) and write a human-readable Korean narration of the game to a text file."
     )
-    parser.add_argument("--checkpoint", default="latest", help="Checkpoint path, or 'latest' for the newest in --checkpoint-dir.")
+    parser.add_argument("--checkpoint", default="latest", help="Team A: checkpoint path, or 'latest' for the newest in --checkpoint-dir.")
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
-    parser.add_argument("--policy-seats", default="0,2", help="Comma-separated seats the checkpoint plays, e.g. '0,2'.")
+    parser.add_argument(
+        "--opponent",
+        default="heuristic",
+        help="Team B: 'heuristic', a checkpoint path, or 'latest' for the newest in --opponent-checkpoint-dir.",
+    )
+    parser.add_argument(
+        "--opponent-checkpoint-dir",
+        type=Path,
+        default=None,
+        help="Directory to resolve --opponent 'latest' in (default: same as --checkpoint-dir).",
+    )
+    parser.add_argument("--team-a-seats", default="0,2", help="Comma-separated seats team A plays, e.g. '0,2'.")
     parser.add_argument("--stochastic", action="store_true", help="Sample actions instead of playing the argmax move.")
-    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=None, help="Omit for a fresh random seed (still reported in the log/filename).")
     parser.add_argument("--output", type=Path, default=None, help="Output text file path (default: auto-named under game_logs/).")
     args = parser.parse_args()
 
-    policy_seats = tuple(int(s) for s in args.policy_seats.split(","))
-    if len(policy_seats) != 2 or PARTNER[policy_seats[0]] != policy_seats[1]:
-        raise ValueError("--policy-seats must name one team, e.g. '0,2' or '1,3'")
+    team_a_seats = tuple(int(s) for s in args.team_a_seats.split(","))
+    if len(team_a_seats) != 2 or PARTNER[team_a_seats[0]] != team_a_seats[1]:
+        raise ValueError("--team-a-seats must name one team, e.g. '0,2' or '1,3'")
+    team_b_seats = tuple(s for s in range(4) if s not in team_a_seats)
 
     checkpoint_path = _resolve_checkpoint(args.checkpoint, args.checkpoint_dir)
-    network = load_checkpoint(checkpoint_path)
-    chooser = policy_chooser(network, deterministic=not args.stochastic)
-    opponent_chooser = heuristic_chooser()
-    seat_choosers = {seat: (chooser if seat in policy_seats else opponent_chooser) for seat in range(4)}
-    seat_labels = _seat_labels(policy_seats)
+    network_a = load_checkpoint(checkpoint_path)
+    chooser_a = policy_chooser(network_a, deterministic=not args.stochastic)
 
-    rng = random.Random(args.seed) if args.seed is not None else random.Random()
+    if args.opponent == "heuristic":
+        chooser_b = heuristic_chooser()
+        opponent_path = None
+        scoring_networks = {seat: network_a for seat in range(4)}
+        team_b_desc = "휴리스틱 봇(규칙 기반)"
+        opponent_is_policy = False
+    else:
+        opponent_dir = args.opponent_checkpoint_dir if args.opponent_checkpoint_dir is not None else args.checkpoint_dir
+        opponent_path = _resolve_checkpoint(args.opponent, opponent_dir)
+        network_b = load_checkpoint(opponent_path)
+        chooser_b = policy_chooser(network_b, deterministic=not args.stochastic)
+        scoring_networks = {seat: (network_a if seat in team_a_seats else network_b) for seat in range(4)}
+        team_b_desc = f"학습된 정책망(체크포인트: {opponent_path})"
+        opponent_is_policy = True
+
+    seat_choosers = {seat: (chooser_a if seat in team_a_seats else chooser_b) for seat in range(4)}
+    seat_labels = _seat_labels(team_a_seats)
+    team_tags = _team_tags(team_a_seats)
+
+    seed = args.seed if args.seed is not None else random.SystemRandom().randrange(1_000_000)
+    rng = random.Random(seed)
     env = TichuEnv(rng=rng)
 
-    lines = build_preamble(checkpoint_path, "휴리스틱 봇(규칙 기반)", policy_seats, args.seed)
-    lines.extend(narrate_round(env, seat_choosers, seat_labels, scoring_network=network))
+    team_a_desc = f"학습된 정책망(체크포인트: {checkpoint_path})"
+    lines = build_preamble(team_a_desc, team_b_desc, team_a_seats, team_b_seats, seed, opponent_is_policy)
+    lines.extend(narrate_round(env, seat_choosers, seat_labels, scoring_networks, team_tags))
 
     output_path = args.output
     if output_path is None:
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        output_path = DEFAULT_OUTPUT_DIR / f"game_{timestamp}.txt"
+        a_id = _identifier(checkpoint_path)
+        b_id = _identifier(opponent_path)
+        output_path = DEFAULT_OUTPUT_DIR / f"{a_id}_vs_{b_id}_seed{seed}.txt"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"게임 로그를 저장했습니다: {output_path}")
+    print(f"게임 로그를 저장했습니다: {output_path} (시드 {seed})")
 
 
 if __name__ == "__main__":
