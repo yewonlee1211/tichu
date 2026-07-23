@@ -22,6 +22,12 @@ class PolicyValueOutput:
     state_value: Tensor  # scalar, estimated value of the observation for the current player
 
 
+@dataclass(frozen=True)
+class BatchedPolicyValueOutput:
+    action_logits: Tensor  # (sum(action_counts),) every transition's candidate logits, concatenated in order
+    state_values: Tensor  # (num_transitions,) one value per transition
+
+
 class TichuPolicyValueNet(nn.Module):
     """Policy/value network over Tichu's variable-size legal action set.
 
@@ -66,6 +72,28 @@ class TichuPolicyValueNet(nn.Module):
         action_logits = self.action_scorer(combined).squeeze(-1)  # (N,)
         state_value = self.value_head(state_embedding).squeeze(-1)  # scalar
         return PolicyValueOutput(action_logits=action_logits, state_value=state_value)
+
+    def forward_batch(self, obs_batch: Tensor, action_vectors: Tensor, action_counts: Tensor) -> BatchedPolicyValueOutput:
+        """Batched equivalent of calling `forward` once per transition, used during
+        training-time loss computation where many transitions are scored together.
+        Calling `forward` in a loop puts one tiny matmul per transition through every
+        layer, which autograd then has to retrace node-by-node on the backward pass --
+        this instead runs each layer once over the whole batch.
+
+        obs_batch: (num_transitions, obs_dim), one observation per transition.
+        action_vectors: (sum(action_counts), action_dim), every transition's candidate
+        action vectors concatenated in order.
+        action_counts: (num_transitions,) int64, candidate count per transition -- how
+        `action_vectors` (and the returned `action_logits`) split back into per-transition
+        groups, e.g. via `torch.split(action_logits, action_counts.tolist())`.
+        """
+        state_embeddings = self.encode_state(obs_batch)  # (num_transitions, embedding_dim)
+        action_embeddings = self.action_encoder(action_vectors)  # (sum(action_counts), embedding_dim)
+        expanded_state = state_embeddings.repeat_interleave(action_counts, dim=0)
+        combined = torch.cat([expanded_state, action_embeddings], dim=-1)
+        action_logits = self.action_scorer(combined).squeeze(-1)  # (sum(action_counts),)
+        state_values = self.value_head(state_embeddings).squeeze(-1)  # (num_transitions,)
+        return BatchedPolicyValueOutput(action_logits=action_logits, state_values=state_values)
 
     def action_probabilities(self, obs: Tensor, action_vectors: Tensor) -> Tensor:
         """Softmax over the candidate action logits for `obs`. Convenience wrapper
