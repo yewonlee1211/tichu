@@ -3,7 +3,7 @@ import random
 import pytest
 
 from tichu_env.cards import Card, Rank, Suit
-from tichu_env.combinations import ComboType
+from tichu_env.combinations import ComboType, identify_combo
 from tichu_env.state import (
     NUM_PLAYERS,
     GameState,
@@ -156,7 +156,11 @@ def test_play_combo_rejects_playing_out_of_turn_for_non_bomb():
 def test_bomb_can_interrupt_out_of_turn():
     quad = [card(Rank.SEVEN, s) for s in (Suit.SWORD, Suit.PAGODA, Suit.JADE, Suit.STAR)]
     state = make_playing_state(
-        {0: [card(Rank.FIVE)], 1: [], 2: quad, 3: []},
+        # Player 2 keeps an extra card so playing the quad doesn't finish
+        # them -- players 0 and 2 are partners, and if both finished off this
+        # single trick it would trigger a double win and end the round,
+        # which isn't what this test is about.
+        {0: [card(Rank.FIVE)], 1: [], 2: quad + [card(Rank.THREE)], 3: []},
         current_player=0,
         trick_leader=0,
         current_best=None,
@@ -302,6 +306,80 @@ def test_round_ends_immediately_on_a_double_win_before_a_third_player_finishes()
 
     assert state.finished_order == (1, 3)
     assert state.phase is Phase.ROUND_OVER
+
+
+def test_third_player_finishing_mid_trick_collects_the_pending_trick():
+    # Player 3 beats player 0's earlier lead and empties their hand doing so,
+    # becoming the 3rd finisher. Nobody will ever get a chance to pass on
+    # this trick (the round is over), so its cards must be collected into
+    # player 3's pile right here instead of being stranded in trick_cards.
+    state = make_playing_state(
+        {3: [card(Rank.NINE)]},
+        current_player=3,
+        trick_leader=0,
+        current_best=identify_combo([card(Rank.FIVE)]),
+        current_strength=5.0,
+        last_player_to_act=0,
+        trick_cards=(card(Rank.FIVE),),
+        finished_order=(1, 2),
+    )
+
+    state = play_combo(state, 3, [card(Rank.NINE)])
+
+    assert state.finished_order == (1, 2, 3)
+    assert state.phase is Phase.ROUND_OVER
+    assert state.trick_cards == ()
+    assert state.current_best is None
+    assert set(state.collected_tricks[3]) == {card(Rank.FIVE), card(Rank.NINE)}
+    assert state.collected_tricks[0] == ()
+
+
+def test_double_win_still_collects_the_pending_trick_into_the_winners_pile():
+    # Same shape as above, but the finishing play completes a double win
+    # (seats 1 and 3 are partners) instead of a third finisher. Even though
+    # score_round() ignores collected_tricks for a double win, the invariant
+    # that every played card ends up *somewhere* should still hold (useful
+    # for logging/debugging, e.g. the self-play narration log).
+    state = make_playing_state(
+        {3: [card(Rank.NINE)]},
+        current_player=3,
+        trick_leader=0,
+        current_best=identify_combo([card(Rank.FIVE)]),
+        current_strength=5.0,
+        last_player_to_act=0,
+        trick_cards=(card(Rank.FIVE),),
+        finished_order=(1,),
+    )
+
+    state = play_combo(state, 3, [card(Rank.NINE)])
+
+    assert state.finished_order == (1, 3)
+    assert state.phase is Phase.ROUND_OVER
+    assert set(state.collected_tricks[3]) == {card(Rank.FIVE), card(Rank.NINE)}
+
+
+def test_round_ending_play_with_the_dragon_requires_a_recipient():
+    state = make_playing_state(
+        {3: [special(Rank.DRAGON)]},
+        current_player=3,
+        trick_leader=0,
+        current_best=identify_combo([card(Rank.FIVE)]),
+        current_strength=5.0,
+        last_player_to_act=0,
+        trick_cards=(card(Rank.FIVE),),
+        finished_order=(0, 1),
+    )
+
+    with pytest.raises(ValueError):
+        play_combo(state, 3, [special(Rank.DRAGON)])
+
+    # Seat 2 is the only valid recipient: seat 0 already finished, and seat 1
+    # is the winner's (seat 3's) own partner.
+    resolved = play_combo(state, 3, [special(Rank.DRAGON)], dragon_recipient=2)
+
+    assert resolved.phase is Phase.ROUND_OVER
+    assert set(resolved.collected_tricks[2]) == {card(Rank.FIVE), special(Rank.DRAGON)}
+    assert resolved.collected_tricks[3] == ()
 
 
 # ---------------------------------------------------------------------------

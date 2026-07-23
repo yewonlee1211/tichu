@@ -20,10 +20,10 @@ def score_round(state: GameState) -> tuple[int, int]:
     running game score."""
     if state.phase is not Phase.ROUND_OVER:
         raise ValueError("round has not ended yet")
-    if len(state.finished_order) < 2:
-        raise ValueError("round is not actually over (fewer than 3 players have finished)")
 
     finished = state.finished_order
+    if len(finished) < 2:
+        raise ValueError("round is not actually over (fewer than 2 players have finished)")
     first, second = finished[0], finished[1]
     # A double win (both members of one team finish 1st and 2nd before either
     # opponent finishes) ends the round right there -- see state.py's
@@ -31,7 +31,7 @@ def score_round(state: GameState) -> tuple[int, int]:
     # state, not just the usual >= 3.
     double_win = len(finished) == 2 and team_of(first) == team_of(second)
     if len(finished) < 3 and not double_win:
-        raise ValueError("round is not actually over (fewer than 3 players have finished)")
+        raise ValueError("round is not actually over (fewer than 3 players have finished, and not a double win)")
 
     fourth = next(p for p in range(NUM_PLAYERS) if p not in finished)
 

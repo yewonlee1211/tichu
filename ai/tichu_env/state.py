@@ -178,7 +178,13 @@ def legal_combos(state: GameState, player: int) -> list[Combo]:
     return found
 
 
-def play_combo(state: GameState, player: int, cards: Sequence[Card], wish: Rank | None = None) -> GameState:
+def play_combo(
+    state: GameState,
+    player: int,
+    cards: Sequence[Card],
+    wish: Rank | None = None,
+    dragon_recipient: int | None = None,
+) -> GameState:
     if state.phase is not Phase.PLAYING:
         raise ValueError("cards can only be played during the playing phase")
     if player in state.finished_order:
@@ -248,6 +254,30 @@ def play_combo(state: GameState, player: int, cards: Sequence[Card], wish: Rank 
     elif state.mahjong_wish is not None and any(card.rank is state.mahjong_wish for card in cards):
         new_wish = None
 
+    if round_over:
+        # This play both wins the current trick and ends the round (either as
+        # the 3rd player to finish, or by completing a double win). Nobody
+        # else will ever get a chance to pass on it, so the trick must be
+        # resolved right now instead of waiting for a pass_turn() that will
+        # never come -- otherwise these cards are never collected by anyone
+        # and their points simply vanish from scoring.
+        recipient = _resolve_trick_recipient(combo, player, dragon_recipient, finished_order)
+        collected = list(state.collected_tricks)
+        collected[recipient] = collected[recipient] + state.trick_cards + cards
+        return replace(
+            state,
+            hands=tuple(new_hands),
+            trick_cards=(),
+            current_best=None,
+            current_strength=0.0,
+            last_player_to_act=None,
+            passes_in_a_row=0,
+            finished_order=finished_order,
+            mahjong_wish=new_wish,
+            collected_tricks=tuple(collected),
+            phase=Phase.ROUND_OVER,
+        )
+
     next_player = _next_active_player(player, finished_order)
 
     return replace(
@@ -261,7 +291,7 @@ def play_combo(state: GameState, player: int, cards: Sequence[Card], wish: Rank 
         current_player=next_player,
         finished_order=finished_order,
         mahjong_wish=new_wish,
-        phase=Phase.ROUND_OVER if round_over else Phase.PLAYING,
+        phase=Phase.PLAYING,
     )
 
 
@@ -295,22 +325,8 @@ def pass_turn(state: GameState, player: int, dragon_recipient: int | None = None
             passes_in_a_row=passes,
             current_player=_next_active_player(player, state.finished_order),
         )
-    is_dragon_win = (
-        state.current_best.combo_type is ComboType.SINGLE and state.current_best.cards[0].rank is Rank.DRAGON
-    )
-    if is_dragon_win:
-        if dragon_recipient is None:
-            raise ValueError("winning a trick with the Dragon requires choosing an opponent to give it to")
-        if dragon_recipient == winner or PARTNER[dragon_recipient] == winner:
-            raise ValueError("the Dragon trick must go to an opponent, not the winner's own team")
-        if dragon_recipient in state.finished_order:
-            raise ValueError("cannot give the Dragon trick to a player who has already finished")
-        recipient = dragon_recipient
-    else:
-        if dragon_recipient is not None:
-            raise ValueError("dragon_recipient is only used when the Dragon wins the trick")
-        recipient = winner
 
+    recipient = _resolve_trick_recipient(state.current_best, winner, dragon_recipient, state.finished_order)
     collected = list(state.collected_tricks)
     collected[recipient] = collected[recipient] + state.trick_cards
 
@@ -332,6 +348,25 @@ def pass_turn(state: GameState, player: int, dragon_recipient: int | None = None
         current_player=next_leader,
         collected_tricks=tuple(collected),
     )
+
+
+def _resolve_trick_recipient(
+    winning_combo: Combo, winner: int, dragon_recipient: int | None, finished_order: tuple[int, ...]
+) -> int:
+    """Who a just-completed trick's cards go to: normally the winner, but a
+    trick won with a lone Dragon single must go to a chosen opponent."""
+    is_dragon_win = winning_combo.combo_type is ComboType.SINGLE and winning_combo.cards[0].rank is Rank.DRAGON
+    if not is_dragon_win:
+        if dragon_recipient is not None:
+            raise ValueError("dragon_recipient is only used when the Dragon wins the trick")
+        return winner
+    if dragon_recipient is None:
+        raise ValueError("winning a trick with the Dragon requires choosing an opponent to give it to")
+    if dragon_recipient == winner or PARTNER[dragon_recipient] == winner:
+        raise ValueError("the Dragon trick must go to an opponent, not the winner's own team")
+    if dragon_recipient in finished_order:
+        raise ValueError("cannot give the Dragon trick to a player who has already finished")
+    return dragon_recipient
 
 
 def _wish_fulfilling_plays(state: GameState, player: int) -> list[Combo]:

@@ -6,7 +6,8 @@ from typing import Optional
 
 import numpy as np
 
-from tichu_env.combinations import Combo
+from tichu_env.cards import Rank
+from tichu_env.combinations import Combo, ComboType
 from tichu_env.encoding import encode_legal_actions, encode_observation
 from tichu_env.scoring import score_round
 from tichu_env.state import (
@@ -83,7 +84,12 @@ class TichuEnv:
         else:
             if action not in legal:
                 raise ValueError("action is not in the current legal action set")
-            new_state = play_combo(state, player, action.cards)
+            # If this play is a lone Dragon single, it may win and end the
+            # round outright (no pass_turn will ever follow to supply this),
+            # so a recipient must be provided up front; play_combo() simply
+            # ignores it when this play doesn't actually end the round.
+            recipient = _auto_dragon_recipient(state, player) if _is_dragon_single(action) else None
+            new_state = play_combo(state, player, action.cards, dragon_recipient=recipient)
 
         self._state = new_state
 
@@ -116,14 +122,11 @@ class TichuEnv:
 
 
 def _is_dragon_win(state: GameState) -> bool:
-    from tichu_env.combinations import ComboType
-    from tichu_env.cards import Rank
+    return state.current_best is not None and _is_dragon_single(state.current_best)
 
-    return (
-        state.current_best is not None
-        and state.current_best.combo_type is ComboType.SINGLE
-        and state.current_best.cards[0].rank is Rank.DRAGON
-    )
+
+def _is_dragon_single(combo: Combo) -> bool:
+    return combo.combo_type is ComboType.SINGLE and combo.cards[0].rank is Rank.DRAGON
 
 
 def _auto_dragon_recipient(state: GameState, winner: int) -> int:
