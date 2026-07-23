@@ -24,21 +24,32 @@ class IterationMetrics:
     value_loss: float
 
 
+DEFAULT_REWARD_SCALE = 100.0
+
+
 def compute_reinforce_loss(
-    network: TichuPolicyValueNet, episodes: list[list[Transition]]
+    network: TichuPolicyValueNet,
+    episodes: list[list[Transition]],
+    reward_scale: float = DEFAULT_REWARD_SCALE,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
     """Returns (policy_loss, value_loss, total_loss, mean_return) for one batch of
     self-play episodes, using REINFORCE with a learned value baseline. A round has no
     intermediate rewards (see training.self_play.Transition), so every transition in a
-    trajectory shares the same Monte Carlo return: that trajectory's final reward."""
+    trajectory shares the same Monte Carlo return: that trajectory's final reward.
+
+    Team-score-scale returns (roughly -400..+400, from Tichu/Large Tichu bonuses and
+    double wins) make for badly-scaled squared-error gradients on the value head, so the
+    return is divided by `reward_scale` before it's used in either loss term. `mean_return`
+    is still reported in the original, human-readable score units."""
     policy_losses: list[torch.Tensor] = []
     value_losses: list[torch.Tensor] = []
-    returns: list[float] = []
+    raw_returns: list[float] = []
 
     for trajectory in episodes:
         if not trajectory:
             continue
-        episode_return = trajectory[-1].reward
+        raw_return = trajectory[-1].reward
+        scaled_return = raw_return / reward_scale
         for transition in trajectory:
             obs = torch.as_tensor(transition.observation, dtype=torch.float32)
             action_vectors = torch.as_tensor(transition.action_vectors, dtype=torch.float32)
@@ -46,16 +57,16 @@ def compute_reinforce_loss(
 
             log_probs = torch.log_softmax(output.action_logits, dim=-1)
             chosen_log_prob = log_probs[transition.chosen_index]
-            advantage = episode_return - output.state_value.detach()
+            advantage = scaled_return - output.state_value.detach()
 
             policy_losses.append(-chosen_log_prob * advantage)
-            value_losses.append((output.state_value - episode_return) ** 2)
-            returns.append(episode_return)
+            value_losses.append((output.state_value - scaled_return) ** 2)
+            raw_returns.append(raw_return)
 
     policy_loss = torch.stack(policy_losses).mean()
     value_loss = torch.stack(value_losses).mean()
     total_loss = policy_loss + value_loss
-    mean_return = sum(returns) / len(returns)
+    mean_return = sum(raw_returns) / len(raw_returns)
     return policy_loss, value_loss, total_loss, mean_return
 
 
@@ -64,6 +75,7 @@ def train(
     iterations: int,
     games_per_iteration: int = 20,
     learning_rate: float = 1e-3,
+    reward_scale: float = DEFAULT_REWARD_SCALE,
     rng: random.Random | None = None,
     checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
     checkpoint_every: int = 10,
@@ -86,7 +98,9 @@ def train(
 
         for iteration in range(1, iterations + 1):
             episodes = generate_self_play_games(network, games_per_iteration, rng=rng)
-            policy_loss, value_loss, total_loss, mean_return = compute_reinforce_loss(network, episodes)
+            policy_loss, value_loss, total_loss, mean_return = compute_reinforce_loss(
+                network, episodes, reward_scale=reward_scale
+            )
 
             optimizer.zero_grad()
             total_loss.backward()
@@ -118,6 +132,7 @@ def _main() -> None:
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--games-per-iteration", type=int, default=20)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--reward-scale", type=float, default=DEFAULT_REWARD_SCALE)
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--checkpoint-every", type=int, default=10)
     parser.add_argument("--metrics-path", type=Path, default=DEFAULT_METRICS_PATH)
@@ -131,6 +146,7 @@ def _main() -> None:
         iterations=args.iterations,
         games_per_iteration=args.games_per_iteration,
         learning_rate=args.learning_rate,
+        reward_scale=args.reward_scale,
         rng=rng,
         checkpoint_dir=args.checkpoint_dir,
         checkpoint_every=args.checkpoint_every,
