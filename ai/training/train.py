@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import random
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import numpy as np
 import torch
 from torch import optim
 
+from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 from training.self_play import Transition, generate_self_play_games
 
@@ -29,6 +31,42 @@ class IterationMetrics:
 
 DEFAULT_REWARD_SCALE = 100.0
 DEFAULT_ENTROPY_COEF = 0.0
+
+
+_REQUIRED_TRAINING_STATE_KEYS = {"iteration", "model_state_dict", "optimizer_state_dict", "rng_state"}
+
+
+def _training_state_path(checkpoint_dir: Path, iteration: int) -> Path:
+    return checkpoint_dir / f"training_state_{iteration}.pt"
+
+
+def _atomic_torch_save(obj: object, path: Path) -> None:
+    """Saves via a same-directory temp file + rename so a process killed mid-write
+    leaves the previous (or no) file at `path` rather than a truncated one -- a
+    corrupt training_state_*.pt would otherwise silently block every future resume
+    attempt that lands on it."""
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    torch.save(obj, tmp_path)
+    tmp_path.replace(path)
+
+
+def find_latest_training_state(checkpoint_dir: Path) -> Path | None:
+    """Returns the highest-iteration `training_state_*.pt` file in `checkpoint_dir`, or
+    `None` if none exist. Backs the CLI's `--resume` convenience flag so a crashed run
+    can be continued without the caller needing to know the exact iteration number it
+    last reached. Files whose name doesn't parse as `training_state_<int>.pt` (e.g. a
+    manually copied backup) are ignored rather than crashing the lookup."""
+    numbered_candidates: list[tuple[int, Path]] = []
+    for path in checkpoint_dir.glob("training_state_*.pt"):
+        try:
+            iteration = int(path.stem.removeprefix("training_state_"))
+        except ValueError:
+            continue
+        numbered_candidates.append((iteration, path))
+
+    if not numbered_candidates:
+        return None
+    return max(numbered_candidates, key=lambda pair: pair[0])[1]
 
 
 def compute_reinforce_loss(
@@ -101,10 +139,12 @@ def train(
     reward_scale: float = DEFAULT_REWARD_SCALE,
     entropy_coef: float = DEFAULT_ENTROPY_COEF,
     lr_min: float | None = None,
+    opponent: object | None = None,
     rng: random.Random | None = None,
     checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
     checkpoint_every: int = 10,
     metrics_path: Path = DEFAULT_METRICS_PATH,
+    resume_from: Path | None = None,
 ) -> list[IterationMetrics]:
     """Runs the self-play -> REINFORCE update loop for `iterations` steps. Each
     iteration generates `games_per_iteration` fresh self-play games with the network's
@@ -115,27 +155,95 @@ def train(
     `lr_min`, if set, anneals the learning rate from `learning_rate` down to `lr_min`
     over the run via cosine decay (`learning_rate` at iteration 1, `lr_min` at the final
     iteration). Left `None`, the learning rate stays constant -- the run1 baseline
-    behavior."""
+    behavior.
+
+    `opponent`, if set, is forwarded to `generate_self_play_games` and takes over
+    team1's seats every game (see `training.self_play.play_self_play_round`); only
+    team0's transitions -- the network's own -- ever feed the loss. Left `None`,
+    `network` mirrors itself at all 4 seats, as before.
+
+    `resume_from`, if set, points to a `training_state_*.pt` file saved by an earlier
+    call (alongside that iteration's `checkpoint_*.pt`, at the same `checkpoint_every`
+    interval). It restores `network`'s weights, the optimizer's momentum, and `rng`'s
+    state exactly as they were right after that iteration, then continues from the next
+    iteration onward. `iterations` is always the *absolute* final iteration to reach,
+    not an additional count on top of the saved one -- so running iterations=6
+    uninterrupted, or running iterations=3 and then resuming with iterations=6, land on
+    identical final weights.
+
+    `learning_rate`, `entropy_coef`, and `reward_scale` always take whatever value is
+    passed to *this* call, even when resuming -- so resuming with a changed value
+    switches training onto the new hyperparameter starting with the very next
+    iteration, while the optimizer's momentum and the self-play RNG stream carry over
+    unbroken. `lr_min` behaves the same way for the value itself, but because a cosine
+    schedule needs a full curve shape to evaluate, changing it on resume reconstructs
+    the schedule as if the new `lr_min` (and current `iterations`) had applied for the
+    *entire* run, purely to derive the correct internal position to continue from --
+    iterations 1..N's already-recorded history is untouched, but the new curve is not a
+    clean splice of "old shape then new shape"."""
     rng = rng if rng is not None else random.Random()
+
+    resumed_state = None
+    start_iteration = 1
+    if resume_from is not None:
+        # Trusted load: resume_from is always expected to be a training_state_*.pt this
+        # same module wrote via _atomic_torch_save below, never an arbitrary/untrusted
+        # file -- weights_only=False is required to deserialize the optimizer/rng state
+        # bundled alongside the tensors.
+        resumed_state = torch.load(resume_from, weights_only=False)
+        missing_keys = _REQUIRED_TRAINING_STATE_KEYS - resumed_state.keys()
+        if missing_keys:
+            raise ValueError(
+                f"resume_from ({resume_from}) is missing expected key(s) {sorted(missing_keys)} -- "
+                "is this a checkpoint_*.pt file (model weights only) instead of a training_state_*.pt file?"
+            )
+        network.load_state_dict(resumed_state["model_state_dict"])
+        rng.setstate(resumed_state["rng_state"])
+        start_iteration = resumed_state["iteration"] + 1
+        if start_iteration > iterations:
+            raise ValueError(
+                f"resume_from ({resume_from}) is already at iteration {resumed_state['iteration']}, "
+                f"which is not before the requested iterations={iterations}"
+            )
+
     optimizer = optim.Adam(network.parameters(), lr=learning_rate)
+    if resumed_state is not None:
+        optimizer.load_state_dict(resumed_state["optimizer_state_dict"])
+    for group in optimizer.param_groups:
+        group["lr"] = learning_rate
+        group["initial_lr"] = learning_rate
+
     scheduler = (
         optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(iterations - 1, 1), eta_min=lr_min)
         if lr_min is not None
         else None
     )
+    if scheduler is not None:
+        # Reconstructing at `last_epoch=start_iteration - 2` looks tempting but is
+        # unreliable: CosineAnnealingLR's very first post-construction lr just echoes
+        # back whatever `lr` is currently set (harmless for a fresh run, where that
+        # happens to equal the correct epoch-0 value, but wrong for any other epoch).
+        # Fast-forwarding with real .step() calls instead walks the same recursive path
+        # an uninterrupted run would have, so it reproduces that run's schedule exactly.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            for _ in range(start_iteration - 1):
+                scheduler.step()
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
 
     history: list[IterationMetrics] = []
-    with metrics_path.open("w", newline="") as metrics_file:
+    write_header = not (metrics_path.exists() and metrics_path.stat().st_size > 0)
+    with metrics_path.open("w" if write_header else "a", newline="") as metrics_file:
         writer = csv.writer(metrics_file)
-        writer.writerow(
-            ["iteration", "games", "mean_return", "policy_loss", "value_loss", "mean_entropy", "learning_rate"]
-        )
+        if write_header:
+            writer.writerow(
+                ["iteration", "games", "mean_return", "policy_loss", "value_loss", "mean_entropy", "learning_rate"]
+            )
 
-        for iteration in range(1, iterations + 1):
+        for iteration in range(start_iteration, iterations + 1):
             current_lr = optimizer.param_groups[0]["lr"]
-            episodes = generate_self_play_games(network, games_per_iteration, rng=rng)
+            episodes = generate_self_play_games(network, games_per_iteration, rng=rng, opponent=opponent)
             policy_loss, value_loss, total_loss, mean_return, mean_entropy = compute_reinforce_loss(
                 network, episodes, reward_scale=reward_scale, entropy_coef=entropy_coef
             )
@@ -170,7 +278,16 @@ def train(
             metrics_file.flush()
 
             if iteration % checkpoint_every == 0 or iteration == iterations:
-                torch.save(network.state_dict(), checkpoint_dir / f"checkpoint_{iteration}.pt")
+                _atomic_torch_save(network.state_dict(), checkpoint_dir / f"checkpoint_{iteration}.pt")
+                _atomic_torch_save(
+                    {
+                        "iteration": iteration,
+                        "model_state_dict": network.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "rng_state": rng.getstate(),
+                    },
+                    _training_state_path(checkpoint_dir, iteration),
+                )
 
     return history
 
@@ -187,16 +304,39 @@ def _main() -> None:
     parser.add_argument(
         "--lr-min", type=float, default=None, help="Cosine-anneal the learning rate down to this value."
     )
+    parser.add_argument(
+        "--heuristic-opponent",
+        action="store_true",
+        help="Fix team1's seats to AdvancedHeuristicAgent instead of mirroring the network.",
+    )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--checkpoint-every", type=int, default=10)
     parser.add_argument("--metrics-path", type=Path, default=DEFAULT_METRICS_PATH)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from the latest training_state_*.pt found in --checkpoint-dir.",
+    )
+    parser.add_argument(
+        "--resume-from",
+        type=Path,
+        default=None,
+        help="Resume from a specific training_state_*.pt file (overrides --resume).",
+    )
     args = parser.parse_args()
+
+    resume_from = args.resume_from
+    if resume_from is None and args.resume:
+        resume_from = find_latest_training_state(args.checkpoint_dir)
+        if resume_from is None:
+            parser.error(f"--resume was given but no training_state_*.pt file exists in {args.checkpoint_dir}")
 
     if args.seed is not None:
         torch.manual_seed(args.seed)
     network = TichuPolicyValueNet()
     rng = random.Random(args.seed) if args.seed is not None else None
+    opponent = AdvancedHeuristicAgent() if args.heuristic_opponent else None
     history = train(
         network,
         iterations=args.iterations,
@@ -205,10 +345,12 @@ def _main() -> None:
         reward_scale=args.reward_scale,
         entropy_coef=args.entropy_coef,
         lr_min=args.lr_min,
+        opponent=opponent,
         rng=rng,
         checkpoint_dir=args.checkpoint_dir,
         checkpoint_every=args.checkpoint_every,
         metrics_path=args.metrics_path,
+        resume_from=resume_from,
     )
     last = history[-1]
     print(

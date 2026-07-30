@@ -2,6 +2,7 @@ import random
 
 from tichu_env.scoring import TEAM_OF
 
+from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 from training.self_play import Transition, generate_self_play_games, play_self_play_round
 
@@ -54,6 +55,36 @@ def test_round_rewards_are_zero_sum_and_symmetric_within_a_team():
     team0_reward = next(iter(by_team[0]))
     team1_reward = next(iter(by_team[1]))
     assert team0_reward == -team1_reward
+
+
+def test_opponent_seats_record_no_transitions_and_are_not_asked_of_the_network():
+    network = _small_network()
+    trajectories = play_self_play_round(network, rng=random.Random(5), opponent=AdvancedHeuristicAgent())
+
+    for player in range(4):
+        if TEAM_OF[player] == TEAM_OF[0]:
+            assert trajectories[player], "team0 (the trainable network) should still record its own turns"
+        else:
+            assert trajectories[player] == [], "team1 seats should record nothing once an opponent plays them"
+
+
+def test_generate_self_play_games_threads_the_opponent_through_to_every_round():
+    network = _small_network()
+    episodes = generate_self_play_games(
+        network, num_games=3, rng=random.Random(6), opponent=AdvancedHeuristicAgent()
+    )
+
+    team0_trajectories = [t for i, t in enumerate(episodes) if TEAM_OF[i % 4] == TEAM_OF[0] and t]
+    team1_trajectories = [t for i, t in enumerate(episodes) if TEAM_OF[i % 4] == TEAM_OF[1] and t]
+    assert len(team0_trajectories) == 2 * 3, "one non-empty trajectory per team0 seat per game"
+    assert not team1_trajectories, "the opponent's seats must never contribute a trajectory"
+
+
+def test_opponent_none_keeps_todays_exact_mirror_self_play_behaviour():
+    network = _small_network()
+    trajectories = play_self_play_round(network, rng=random.Random(7), opponent=None)
+
+    assert all(trajectories), "with no opponent, every seat still plays via the network and records a trajectory"
 
 
 def test_transition_is_immutable():
