@@ -4,7 +4,7 @@ from tichu_env.scoring import TEAM_OF
 
 from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
-from training.self_play import Transition, generate_self_play_games, play_self_play_round
+from training.self_play import PolicyOpponent, Transition, generate_self_play_games, play_self_play_round
 
 
 def _small_network() -> TichuPolicyValueNet:
@@ -85,6 +85,47 @@ def test_opponent_none_keeps_todays_exact_mirror_self_play_behaviour():
     trajectories = play_self_play_round(network, rng=random.Random(7), opponent=None)
 
     assert all(trajectories), "with no opponent, every seat still plays via the network and records a trajectory"
+
+
+def test_policy_opponent_plays_a_frozen_network_as_a_valid_self_play_opponent():
+    network = _small_network()
+    frozen = _small_network()
+    trajectories = play_self_play_round(
+        network, rng=random.Random(30), opponent=PolicyOpponent(frozen, random.Random(31))
+    )
+
+    for player in range(4):
+        if TEAM_OF[player] == TEAM_OF[0]:
+            assert trajectories[player], "team0 (the trainable network) should still record its own turns"
+        else:
+            assert trajectories[player] == [], "team1 seats played by PolicyOpponent record nothing"
+
+
+def test_generate_self_play_games_calls_the_opponent_factory_once_per_game():
+    network = _small_network()
+    calls = []
+
+    def factory():
+        calls.append(1)
+        return AdvancedHeuristicAgent()
+
+    generate_self_play_games(network, num_games=4, rng=random.Random(32), opponent_factory=factory)
+
+    assert len(calls) == 4
+
+
+def test_opponent_factory_takes_precedence_over_the_static_opponent():
+    network = _small_network()
+
+    episodes = generate_self_play_games(
+        network,
+        num_games=2,
+        rng=random.Random(33),
+        opponent=AdvancedHeuristicAgent(),
+        opponent_factory=lambda: None,
+    )
+
+    assert all(episodes), "opponent_factory returning None should mirror self-play, overriding `opponent`"
 
 
 def test_transition_is_immutable():

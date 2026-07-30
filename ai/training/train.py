@@ -5,14 +5,17 @@ import random
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import torch
 from torch import optim
 
 from agents.advanced_heuristic import AdvancedHeuristicAgent
+from agents.heuristic import HeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
-from training.self_play import Transition, generate_self_play_games
+from training.opponent_pool import OpponentPool
+from training.self_play import HeuristicOpponentAdapter, PolicyOpponent, Transition, generate_self_play_games
 
 DEFAULT_CHECKPOINT_DIR = Path("checkpoints")
 DEFAULT_METRICS_PATH = Path("checkpoints/metrics.csv")
@@ -131,6 +134,22 @@ def compute_reinforce_loss(
     return policy_loss, value_loss, total_loss, mean_return, entropy.item()
 
 
+def _sample_pool_mix_opponent(opponent_pool: OpponentPool, rng: random.Random) -> object:
+    """Picks one game's team1 opponent: an equal-weight draw among whichever of
+    {a snapshot from `opponent_pool`, `HeuristicAgent`, `AdvancedHeuristicAgent`} are
+    currently available. The pool's share is left out of the draw entirely (rather
+    than given zero weight within it, which would waste a third of games erroring
+    out) while the pool is still empty -- e.g. right at the start of a run before
+    any checkpoint has been added to it."""
+    choices: list[Callable[[], object]] = [
+        lambda: HeuristicOpponentAdapter(HeuristicAgent()),
+        lambda: AdvancedHeuristicAgent(),
+    ]
+    if len(opponent_pool) > 0:
+        choices.append(lambda: PolicyOpponent(opponent_pool.sample(rng), rng))
+    return rng.choice(choices)()
+
+
 def train(
     network: TichuPolicyValueNet,
     iterations: int,
@@ -140,6 +159,7 @@ def train(
     entropy_coef: float = DEFAULT_ENTROPY_COEF,
     lr_min: float | None = None,
     opponent: object | None = None,
+    opponent_pool: OpponentPool | None = None,
     rng: random.Random | None = None,
     checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
     checkpoint_every: int = 10,
@@ -161,6 +181,17 @@ def train(
     team1's seats every game (see `training.self_play.play_self_play_round`); only
     team0's transitions -- the network's own -- ever feed the loss. Left `None`,
     `network` mirrors itself at all 4 seats, as before.
+
+    `opponent_pool`, if set, takes precedence over `opponent`: each game's team1
+    opponent is instead an equal-weight random draw among {a frozen snapshot from
+    the pool, `HeuristicAgent`, `AdvancedHeuristicAgent`} (see
+    `_sample_pool_mix_opponent`), so team0 keeps facing a mix of past selves and
+    fixed baselines rather than either a single static opponent or a pure mirror of
+    its own current, still-changing policy. `network`'s own current weights are
+    added to `opponent_pool` as a new snapshot at every `checkpoint_every` interval
+    (alongside that iteration's checkpoint files), so the pool grows over the
+    course of a run; callers can also pre-seed it before calling `train` (e.g. with
+    checkpoints from an earlier phase of the same experiment).
 
     `resume_from`, if set, points to a `training_state_*.pt` file saved by an earlier
     call (alongside that iteration's `checkpoint_*.pt`, at the same `checkpoint_every`
@@ -243,7 +274,12 @@ def train(
 
         for iteration in range(start_iteration, iterations + 1):
             current_lr = optimizer.param_groups[0]["lr"]
-            episodes = generate_self_play_games(network, games_per_iteration, rng=rng, opponent=opponent)
+            opponent_factory = (
+                (lambda: _sample_pool_mix_opponent(opponent_pool, rng)) if opponent_pool is not None else None
+            )
+            episodes = generate_self_play_games(
+                network, games_per_iteration, rng=rng, opponent=opponent, opponent_factory=opponent_factory
+            )
             policy_loss, value_loss, total_loss, mean_return, mean_entropy = compute_reinforce_loss(
                 network, episodes, reward_scale=reward_scale, entropy_coef=entropy_coef
             )
@@ -288,6 +324,8 @@ def train(
                     },
                     _training_state_path(checkpoint_dir, iteration),
                 )
+                if opponent_pool is not None:
+                    opponent_pool.add(network)
 
     return history
 
@@ -309,6 +347,28 @@ def _main() -> None:
         action="store_true",
         help="Fix team1's seats to AdvancedHeuristicAgent instead of mirroring the network.",
     )
+    parser.add_argument(
+        "--opponent-pool",
+        action="store_true",
+        help=(
+            "Draw team1's seats each game from an equal-weight mix of past-checkpoint "
+            "snapshots, HeuristicAgent, and AdvancedHeuristicAgent, instead of a single "
+            "fixed opponent. Mutually exclusive with --heuristic-opponent."
+        ),
+    )
+    parser.add_argument(
+        "--opponent-pool-seed",
+        nargs="+",
+        type=Path,
+        default=(),
+        help="checkpoint_*.pt file(s) to pre-load into the opponent pool before training starts.",
+    )
+    parser.add_argument(
+        "--opponent-pool-max-size",
+        type=int,
+        default=None,
+        help="Cap on the opponent pool's size; oldest snapshots are evicted first once exceeded.",
+    )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--checkpoint-every", type=int, default=10)
     parser.add_argument("--metrics-path", type=Path, default=DEFAULT_METRICS_PATH)
@@ -326,6 +386,9 @@ def _main() -> None:
     )
     args = parser.parse_args()
 
+    if args.heuristic_opponent and args.opponent_pool:
+        parser.error("--heuristic-opponent and --opponent-pool are mutually exclusive")
+
     resume_from = args.resume_from
     if resume_from is None and args.resume:
         resume_from = find_latest_training_state(args.checkpoint_dir)
@@ -337,6 +400,13 @@ def _main() -> None:
     network = TichuPolicyValueNet()
     rng = random.Random(args.seed) if args.seed is not None else None
     opponent = AdvancedHeuristicAgent() if args.heuristic_opponent else None
+    opponent_pool = None
+    if args.opponent_pool:
+        opponent_pool = OpponentPool(max_size=args.opponent_pool_max_size)
+        for seed_checkpoint in args.opponent_pool_seed:
+            seed_network = TichuPolicyValueNet()
+            seed_network.load_state_dict(torch.load(seed_checkpoint, weights_only=True))
+            opponent_pool.add(seed_network)
     history = train(
         network,
         iterations=args.iterations,
@@ -346,6 +416,7 @@ def _main() -> None:
         entropy_coef=args.entropy_coef,
         lr_min=args.lr_min,
         opponent=opponent,
+        opponent_pool=opponent_pool,
         rng=rng,
         checkpoint_dir=args.checkpoint_dir,
         checkpoint_every=args.checkpoint_every,

@@ -2,15 +2,57 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, replace
+from typing import Callable
 
 import numpy as np
 import torch
 
+from tichu_env.combinations import Combo
+from tichu_env.encoding import encode_observation
 from tichu_env.env import TichuEnv
 from tichu_env.scoring import TEAM_OF
-from tichu_env.state import NUM_PLAYERS
+from tichu_env.state import NUM_PLAYERS, GameState
 
 from agents.policy_network import TichuPolicyValueNet
+
+LegalAction = tuple[Combo | None, np.ndarray]
+
+
+class HeuristicOpponentAdapter:
+    """Adapts an agent whose `choose_action` takes only `legal_actions` (e.g.
+    `HeuristicAgent`) to self-play's opponent interface, which always calls
+    `choose_action(state, legal_actions)` to also support agents like
+    `AdvancedHeuristicAgent` that need the full game state."""
+
+    def __init__(self, agent: object):
+        self._agent = agent
+
+    def choose_action(self, state: GameState, legal_actions: list[LegalAction]) -> Combo | None:
+        return self._agent.choose_action(legal_actions)
+
+
+class PolicyOpponent:
+    """Adapts a frozen `TichuPolicyValueNet` (e.g. an `OpponentPool` snapshot)
+    to self-play's opponent interface (`choose_action(state, legal_actions)`),
+    sampling stochastically from its policy exactly as team0's own turns are
+    sampled -- a past self should still play like the self-play process that
+    produced it, not switch to argmax evaluation-style play."""
+
+    def __init__(self, network: TichuPolicyValueNet, rng: random.Random):
+        self._network = network
+        self._rng = rng
+
+    def choose_action(self, state: GameState, legal_actions: list[LegalAction]) -> Combo | None:
+        combos = [combo for combo, _ in legal_actions]
+        action_vectors = np.stack([vec for _, vec in legal_actions])
+        observation = encode_observation(state, state.current_player)
+        with torch.no_grad():
+            probs = self._network.action_probabilities(
+                torch.as_tensor(observation, dtype=torch.float32),
+                torch.as_tensor(action_vectors, dtype=torch.float32),
+            ).numpy()
+        chosen_index = self._rng.choices(range(len(combos)), weights=probs.tolist(), k=1)[0]
+        return combos[chosen_index]
 
 
 @dataclass(frozen=True)
@@ -103,12 +145,19 @@ def generate_self_play_games(
     num_games: int,
     rng: random.Random | None = None,
     opponent: object | None = None,
+    opponent_factory: Callable[[], object | None] | None = None,
 ) -> list[list[Transition]]:
     """Runs `num_games` self-play rounds and returns a flat list of
     per-player trajectories -- 4 per game, one per seat (some empty when
-    `opponent` is set; see `play_self_play_round`)."""
+    `opponent`/`opponent_factory` is set; see `play_self_play_round`).
+
+    `opponent_factory`, if set, is called once per game to pick that game's
+    team1 opponent afresh (e.g. a random draw from an `OpponentPool` mixed
+    with heuristic agents) -- it takes precedence over the single, fixed
+    `opponent` for every game where it's set."""
     rng = rng if rng is not None else random.Random()
     episodes: list[list[Transition]] = []
     for _ in range(num_games):
-        episodes.extend(play_self_play_round(network, rng, opponent=opponent))
+        game_opponent = opponent_factory() if opponent_factory is not None else opponent
+        episodes.extend(play_self_play_round(network, rng, opponent=game_opponent))
     return episodes
