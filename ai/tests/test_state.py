@@ -243,7 +243,9 @@ def test_dog_passes_lead_to_partner():
     assert state.trick_cards == ()
 
 
-def test_dog_falls_back_to_counter_clockwise_when_partner_already_finished():
+def test_dog_falls_back_to_the_next_active_player_after_the_finished_partner():
+    # Partner (seat 2) already out -> lead goes to whoever is next in turn
+    # order (seat number ascending) after seat 2, which is seat 3.
     state = make_playing_state(
         {0: [special(Rank.DOG)], 1: [card(Rank.THREE)], 3: [card(Rank.FOUR)]},
         current_player=0,
@@ -254,6 +256,27 @@ def test_dog_falls_back_to_counter_clockwise_when_partner_already_finished():
     state = play_combo(state, 0, [special(Rank.DOG)])
 
     assert state.trick_leader == 3
+
+
+def test_dog_fallback_can_wrap_all_the_way_back_to_the_dog_player_themself():
+    # Partner (seat 2) *and* seat 3 are both already out (seats 2 and 3 are
+    # not partners of each other, so this is a legitimate, non-double-win
+    # state). The next active seat after the finished partner, in turn
+    # order, wraps past seat 3 and lands back on seat 0 -- the Dog player
+    # themself -- not on seat 1 (the opposing team).
+    # Player 0 keeps an extra card so playing the Dog doesn't also finish
+    # them -- that would change finished_order and the fallback computation
+    # in a way that isn't the point of this test.
+    state = make_playing_state(
+        {0: [special(Rank.DOG), card(Rank.SIX)], 1: [card(Rank.THREE)]},
+        current_player=0,
+        trick_leader=0,
+        finished_order=(2, 3),
+    )
+
+    state = play_combo(state, 0, [special(Rank.DOG)])
+
+    assert state.trick_leader == 0
 
 
 # ---------------------------------------------------------------------------

@@ -386,10 +386,12 @@ def _next_active_player(current: int, finished_order: tuple[int, ...]) -> int:
 
 
 def _next_leader_after_dog(player: int, finished_order: tuple[int, ...]) -> int:
+    """Dog hands the lead to the player's own teammate. If that teammate has
+    already finished, the lead instead goes to whoever is next in the normal
+    turn order (seat number ascending, wrapping around) after the teammate's
+    seat -- not back to `player`'s own seat first. (Seating direction/clockwise
+    framing doesn't apply here: turn order is simply ascending seat number.)"""
     partner = PARTNER[player]
     if partner not in finished_order:
         return partner
-    seat = (player - 1) % NUM_PLAYERS
-    while seat in finished_order:
-        seat = (seat - 1) % NUM_PLAYERS
-    return seat
+    return _next_active_player(partner, finished_order)
