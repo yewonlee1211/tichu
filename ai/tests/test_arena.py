@@ -6,6 +6,7 @@ import torch
 
 from tichu_env.env import TichuEnv
 
+from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.heuristic import HeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 from agents.random_agent import RandomAgent
@@ -14,6 +15,7 @@ from training.train import train
 from eval.arena import (
     _elo_diff_from_win_rate,
     _resolve_checkpoint,
+    advanced_heuristic_chooser,
     heuristic_chooser,
     load_checkpoint,
     policy_chooser,
@@ -138,4 +140,15 @@ def test_heuristic_team_beats_random_team_over_many_arena_games():
 
     assert result.team_a_win_rate > 0.5
     assert result.team_a_elo_diff > 0
+    assert result.team_a_wins + result.team_b_wins + result.draws == 100
+
+
+def test_advanced_heuristic_team_beats_random_team_over_many_arena_games():
+    advanced_choose = advanced_heuristic_chooser(AdvancedHeuristicAgent())
+    random_agent = RandomAgent(rng=random.Random(11))
+    random_choose = lambda result: random_agent.choose_action(result.legal_actions)  # noqa: E731
+
+    result = run_arena(advanced_choose, random_choose, games=100, rng=random.Random(0))
+
+    assert result.team_a_win_rate > 0.5
     assert result.team_a_wins + result.team_b_wins + result.draws == 100

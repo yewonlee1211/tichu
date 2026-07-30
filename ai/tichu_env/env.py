@@ -32,6 +32,7 @@ class StepResult:
     reward: float
     done: bool
     info: dict
+    state: GameState
 
 
 class TichuEnv:
@@ -118,6 +119,7 @@ class TichuEnv:
             reward=reward,
             done=done,
             info=info,
+            state=state,
         )
 
 

@@ -12,6 +12,7 @@ import torch
 from tichu_env.combinations import Combo
 from tichu_env.env import StepResult, TichuEnv
 
+from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.heuristic import HeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 
@@ -69,6 +70,11 @@ def policy_chooser(network: TichuPolicyValueNet, *, deterministic: bool = True) 
 def heuristic_chooser(agent: HeuristicAgent | None = None) -> SeatChooser:
     agent = agent if agent is not None else HeuristicAgent()
     return lambda result: agent.choose_action(result.legal_actions)
+
+
+def advanced_heuristic_chooser(agent: AdvancedHeuristicAgent | None = None) -> SeatChooser:
+    agent = agent if agent is not None else AdvancedHeuristicAgent()
+    return lambda result: agent.choose_action(result.state, result.legal_actions)
 
 
 def play_arena_round(env: TichuEnv, seat_choosers: dict[int, SeatChooser]) -> tuple[int, int]:

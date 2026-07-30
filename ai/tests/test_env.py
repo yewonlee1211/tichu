@@ -52,6 +52,17 @@ def test_step_raises_on_action_outside_legal_set():
             raise AssertionError("expected step() to reject a card the current player does not hold")
 
 
+def test_step_result_exposes_the_current_game_state():
+    env = TichuEnv(rng=random.Random(4))
+
+    reset_result = env.reset()
+    assert reset_result.state == env.state
+
+    combo, _ = reset_result.legal_actions[0]
+    step_result = env.step(combo)
+    assert step_result.state == env.state
+
+
 def test_finished_round_reports_team_scores_in_info():
     rng = random.Random(3)
     env = TichuEnv(rng=rng)
