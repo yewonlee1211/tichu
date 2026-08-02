@@ -34,6 +34,7 @@ class IterationMetrics:
 
 DEFAULT_REWARD_SCALE = 100.0
 DEFAULT_ENTROPY_COEF = 0.0
+DEFAULT_CLIP_EPSILON = 0.2
 
 
 _REQUIRED_TRAINING_STATE_KEYS = {"iteration", "model_state_dict", "optimizer_state_dict", "rng_state"}
@@ -134,6 +135,73 @@ def compute_reinforce_loss(
     return policy_loss, value_loss, total_loss, mean_return, entropy.item()
 
 
+def compute_ppo_loss(
+    network: TichuPolicyValueNet,
+    episodes: list[list[Transition]],
+    reward_scale: float = DEFAULT_REWARD_SCALE,
+    entropy_coef: float = DEFAULT_ENTROPY_COEF,
+    clip_epsilon: float = DEFAULT_CLIP_EPSILON,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, float]:
+    """PPO's clipped-surrogate counterpart to `compute_reinforce_loss` -- same
+    signature and same value-loss/entropy terms, but the policy loss uses
+    `ratio = exp(new_log_prob - old_log_prob)` (comparing `network`'s *current*
+    log-probability for each transition's chosen action against the log-probability
+    already recorded on it at rollout time, `Transition.old_log_prob`) instead of
+    `log_prob` directly.
+
+    Calling this once, right after the episodes that produced it were generated
+    (so every `old_log_prob` still equals the current `new_log_prob`, ratio==1
+    everywhere), gives the same *gradient* as `compute_reinforce_loss` -- the
+    clipping is inert at ratio==1. The two functions only diverge once `network`'s
+    parameters move away from the rollout-time policy, e.g. across multiple
+    epochs of updates on the same batch of episodes: `min(ratio * advantage,
+    clip(ratio, 1-clip_epsilon, 1+clip_epsilon) * advantage)` caps how much any
+    single transition's loss can reward pushing the policy further in a direction
+    it has already moved a lot in, which is exactly the unbounded-single-step
+    policy churn this function exists to prevent."""
+    transitions: list[Transition] = []
+    raw_returns: list[float] = []
+    for trajectory in episodes:
+        if not trajectory:
+            continue
+        raw_return = trajectory[-1].reward
+        transitions.extend(trajectory)
+        raw_returns.extend([raw_return] * len(trajectory))
+
+    scaled_returns = torch.tensor([r / reward_scale for r in raw_returns], dtype=torch.float32)
+    old_log_probs = torch.tensor([t.old_log_prob for t in transitions], dtype=torch.float32)
+
+    obs_batch = torch.as_tensor(np.stack([t.observation for t in transitions]), dtype=torch.float32)
+    action_vectors = torch.as_tensor(
+        np.concatenate([t.action_vectors for t in transitions], axis=0), dtype=torch.float32
+    )
+    action_counts = torch.tensor([t.action_vectors.shape[0] for t in transitions], dtype=torch.long)
+
+    output = network.forward_batch(obs_batch, action_vectors, action_counts)
+    logits_per_transition = torch.split(output.action_logits, action_counts.tolist())
+
+    policy_losses: list[torch.Tensor] = []
+    entropies: list[torch.Tensor] = []
+    advantages = scaled_returns - output.state_values.detach()
+    for logits, transition, advantage, old_log_prob in zip(
+        logits_per_transition, transitions, advantages, old_log_probs
+    ):
+        log_probs = torch.log_softmax(logits, dim=-1)
+        new_log_prob = log_probs[transition.chosen_index]
+        ratio = torch.exp(new_log_prob - old_log_prob)
+        clipped_ratio = torch.clamp(ratio, 1.0 - clip_epsilon, 1.0 + clip_epsilon)
+        surrogate = torch.min(ratio * advantage, clipped_ratio * advantage)
+        policy_losses.append(-surrogate)
+        entropies.append(-(log_probs.exp() * log_probs).sum())
+
+    policy_loss = torch.stack(policy_losses).mean()
+    value_loss = ((output.state_values - scaled_returns) ** 2).mean()
+    entropy = torch.stack(entropies).mean()
+    total_loss = policy_loss + value_loss - entropy_coef * entropy
+    mean_return = sum(raw_returns) / len(raw_returns)
+    return policy_loss, value_loss, total_loss, mean_return, entropy.item()
+
+
 def _sample_pool_mix_opponent(opponent_pool: OpponentPool, rng: random.Random) -> object:
     """Picks one game's team1 opponent: an equal-weight draw among whichever of
     {a snapshot from `opponent_pool`, `HeuristicAgent`, `AdvancedHeuristicAgent`} are
@@ -160,6 +228,8 @@ def train(
     lr_min: float | None = None,
     opponent: object | None = None,
     opponent_pool: OpponentPool | None = None,
+    ppo_epochs: int | None = None,
+    clip_epsilon: float = DEFAULT_CLIP_EPSILON,
     rng: random.Random | None = None,
     checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
     checkpoint_every: int = 10,
@@ -192,6 +262,16 @@ def train(
     (alongside that iteration's checkpoint files), so the pool grows over the
     course of a run; callers can also pre-seed it before calling `train` (e.g. with
     checkpoints from an earlier phase of the same experiment).
+
+    `ppo_epochs`, if set, switches the update rule from single-step REINFORCE to
+    PPO (see `compute_ppo_loss`): each iteration's episodes are generated once as
+    usual, but then reused for `ppo_epochs` successive gradient steps (each a fresh
+    forward pass under the network's then-current parameters, clipped against the
+    log-probabilities recorded at rollout time) instead of REINFORCE's single step.
+    `clip_epsilon` is PPO's trust-region width and is unused when `ppo_epochs` is
+    `None`. Left `None` (the default), behavior is unchanged from before PPO
+    support existed -- one `compute_reinforce_loss` call and one optimizer step per
+    iteration.
 
     `resume_from`, if set, points to a `training_state_*.pt` file saved by an earlier
     call (alongside that iteration's `checkpoint_*.pt`, at the same `checkpoint_every`
@@ -280,13 +360,23 @@ def train(
             episodes = generate_self_play_games(
                 network, games_per_iteration, rng=rng, opponent=opponent, opponent_factory=opponent_factory
             )
-            policy_loss, value_loss, total_loss, mean_return, mean_entropy = compute_reinforce_loss(
-                network, episodes, reward_scale=reward_scale, entropy_coef=entropy_coef
-            )
 
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
+            if ppo_epochs is not None:
+                for _ in range(ppo_epochs):
+                    policy_loss, value_loss, total_loss, mean_return, mean_entropy = compute_ppo_loss(
+                        network, episodes, reward_scale=reward_scale, entropy_coef=entropy_coef, clip_epsilon=clip_epsilon
+                    )
+                    optimizer.zero_grad()
+                    total_loss.backward()
+                    optimizer.step()
+            else:
+                policy_loss, value_loss, total_loss, mean_return, mean_entropy = compute_reinforce_loss(
+                    network, episodes, reward_scale=reward_scale, entropy_coef=entropy_coef
+                )
+                optimizer.zero_grad()
+                total_loss.backward()
+                optimizer.step()
+
             if scheduler is not None:
                 scheduler.step()
 
@@ -369,6 +459,19 @@ def _main() -> None:
         default=None,
         help="Cap on the opponent pool's size; oldest snapshots are evicted first once exceeded.",
     )
+    parser.add_argument(
+        "--ppo-epochs",
+        type=int,
+        default=None,
+        help="Switch from single-step REINFORCE to PPO, reusing each iteration's episodes for this many "
+        "clipped-surrogate gradient steps.",
+    )
+    parser.add_argument(
+        "--clip-epsilon",
+        type=float,
+        default=DEFAULT_CLIP_EPSILON,
+        help="PPO's trust-region width; only used when --ppo-epochs is set.",
+    )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--checkpoint-every", type=int, default=10)
     parser.add_argument("--metrics-path", type=Path, default=DEFAULT_METRICS_PATH)
@@ -417,6 +520,8 @@ def _main() -> None:
         lr_min=args.lr_min,
         opponent=opponent,
         opponent_pool=opponent_pool,
+        ppo_epochs=args.ppo_epochs,
+        clip_epsilon=args.clip_epsilon,
         rng=rng,
         checkpoint_dir=args.checkpoint_dir,
         checkpoint_every=args.checkpoint_every,

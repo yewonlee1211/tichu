@@ -66,6 +66,7 @@ class Transition:
     action_vectors: np.ndarray  # (num_candidates, ACTION_DIM) legal actions offered at this step
     chosen_index: int  # index into action_vectors of the action actually taken
     reward: float
+    old_log_prob: float = 0.0  # log-probability of chosen_index under the rollout-time policy (PPO only)
 
 
 def play_self_play_round(
@@ -121,6 +122,7 @@ def play_self_play_round(
                     action_vectors=action_vectors,
                     chosen_index=chosen_index,
                     reward=0.0,
+                    old_log_prob=float(np.log(probs[chosen_index])),
                 )
             )
             chosen_combo = combos[chosen_index]

@@ -1,5 +1,8 @@
 import random
 
+import numpy as np
+import pytest
+import torch
 from tichu_env.scoring import TEAM_OF
 
 from agents.advanced_heuristic import AdvancedHeuristicAgent
@@ -126,6 +129,22 @@ def test_opponent_factory_takes_precedence_over_the_static_opponent():
     )
 
     assert all(episodes), "opponent_factory returning None should mirror self-play, overriding `opponent`"
+
+
+def test_transition_records_the_old_log_prob_of_the_chosen_action():
+    network = _small_network()
+    trajectories = play_self_play_round(network, rng=random.Random(40))
+    team0_trajectory = next(t for t in trajectories if t)
+    transition = team0_trajectory[0]
+
+    with torch.no_grad():
+        probs = network.action_probabilities(
+            torch.as_tensor(transition.observation, dtype=torch.float32),
+            torch.as_tensor(transition.action_vectors, dtype=torch.float32),
+        ).numpy()
+    expected_log_prob = float(np.log(probs[transition.chosen_index]))
+
+    assert transition.old_log_prob == pytest.approx(expected_log_prob, abs=1e-5)
 
 
 def test_transition_is_immutable():

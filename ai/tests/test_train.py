@@ -1,5 +1,6 @@
 import random
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 from training.opponent_pool import OpponentPool
 from training.self_play import HeuristicOpponentAdapter, PolicyOpponent, generate_self_play_games
-from training.train import compute_reinforce_loss, train
+from training.train import compute_ppo_loss, compute_reinforce_loss, train
 
 
 def _small_network() -> TichuPolicyValueNet:
@@ -181,6 +182,101 @@ def test_compute_reinforce_loss_matches_a_naive_per_transition_reference_impleme
     assert torch.allclose(total_loss, ref_total, atol=1e-5)
     assert mean_return == pytest.approx(ref_return)
     assert mean_entropy == pytest.approx(ref_entropy, abs=1e-5)
+
+
+def test_compute_ppo_loss_reports_a_non_negative_mean_entropy():
+    network = _small_network()
+    episodes = generate_self_play_games(network, num_games=2, rng=random.Random(60))
+
+    _, _, _, _, mean_entropy = compute_ppo_loss(network, episodes)
+
+    assert mean_entropy >= 0.0
+
+
+def _naive_reference_ppo_loss(
+    network: TichuPolicyValueNet,
+    episodes: list[list],
+    reward_scale: float = 100.0,
+    entropy_coef: float = 0.0,
+    clip_epsilon: float = 0.2,
+):
+    """Independent, unbatched per-transition reimplementation of the clipped PPO
+    surrogate objective -- same role as `_naive_reference_reinforce_loss` above:
+    pins down the batched implementation's correctness against a version that
+    cannot share a batching bug."""
+    policy_losses = []
+    value_losses = []
+    entropies = []
+    raw_returns = []
+
+    for trajectory in episodes:
+        if not trajectory:
+            continue
+        raw_return = trajectory[-1].reward
+        scaled_return = raw_return / reward_scale
+        for transition in trajectory:
+            obs = torch.as_tensor(transition.observation, dtype=torch.float32)
+            action_vectors = torch.as_tensor(transition.action_vectors, dtype=torch.float32)
+            output = network(obs, action_vectors)
+
+            log_probs = torch.log_softmax(output.action_logits, dim=-1)
+            new_log_prob = log_probs[transition.chosen_index]
+            advantage = scaled_return - output.state_value.detach()
+            ratio = torch.exp(new_log_prob - transition.old_log_prob)
+            clipped_ratio = torch.clamp(ratio, 1.0 - clip_epsilon, 1.0 + clip_epsilon)
+            surrogate = torch.min(ratio * advantage, clipped_ratio * advantage)
+
+            policy_losses.append(-surrogate)
+            value_losses.append((output.state_value - scaled_return) ** 2)
+            entropies.append(-(log_probs.exp() * log_probs).sum())
+            raw_returns.append(raw_return)
+
+    policy_loss = torch.stack(policy_losses).mean()
+    value_loss = torch.stack(value_losses).mean()
+    entropy = torch.stack(entropies).mean()
+    total_loss = policy_loss + value_loss - entropy_coef * entropy
+    mean_return = sum(raw_returns) / len(raw_returns)
+    return policy_loss, value_loss, total_loss, mean_return, entropy.item()
+
+
+def test_compute_ppo_loss_matches_a_naive_per_transition_reference_implementation():
+    network = _small_network()
+    episodes = generate_self_play_games(network, num_games=3, rng=random.Random(61))
+    # Shift old_log_prob away from the network's actual current log-probs so the
+    # clipping branch is actually exercised for at least some transitions, rather
+    # than only ever hitting the trivial ratio==1 case.
+    shifted_episodes = [
+        [replace(t, old_log_prob=t.old_log_prob - 0.5) for t in trajectory] for trajectory in episodes
+    ]
+
+    ref_policy, ref_value, ref_total, ref_return, ref_entropy = _naive_reference_ppo_loss(
+        network, shifted_episodes, entropy_coef=0.3, clip_epsilon=0.2
+    )
+    policy_loss, value_loss, total_loss, mean_return, mean_entropy = compute_ppo_loss(
+        network, shifted_episodes, entropy_coef=0.3, clip_epsilon=0.2
+    )
+
+    assert torch.allclose(policy_loss, ref_policy, atol=1e-5)
+    assert torch.allclose(value_loss, ref_value, atol=1e-5)
+    assert torch.allclose(total_loss, ref_total, atol=1e-5)
+    assert mean_return == pytest.approx(ref_return)
+    assert mean_entropy == pytest.approx(ref_entropy, abs=1e-5)
+
+
+def test_a_tighter_clip_epsilon_changes_the_policy_loss_when_the_ratio_is_far_from_one():
+    network = _small_network()
+    episodes = generate_self_play_games(network, num_games=2, rng=random.Random(62))
+    # Shift old_log_prob far below the network's current log-probs so ratio =
+    # exp(new - old) is far above 1 for every transition, guaranteeing the clip
+    # bound actually engages.
+    shifted_episodes = [
+        [replace(t, old_log_prob=t.old_log_prob - 2.0) for t in trajectory] for trajectory in episodes
+    ]
+
+    tight_policy_loss, _, _, _, _ = compute_ppo_loss(network, shifted_episodes, clip_epsilon=0.1)
+    loose_policy_loss, _, _, _, _ = compute_ppo_loss(network, shifted_episodes, clip_epsilon=10.0)
+
+    assert tight_policy_loss.item() != pytest.approx(loose_policy_loss.item())
 
 
 def test_train_logs_mean_entropy_as_a_metrics_column(tmp_path: Path):
@@ -977,6 +1073,97 @@ def test_cli_rejects_combining_heuristic_opponent_and_opponent_pool_flags(monkey
 
     with pytest.raises(SystemExit):
         train_module._main()
+
+
+def test_train_calls_compute_ppo_loss_ppo_epochs_times_per_iteration(tmp_path: Path, monkeypatch):
+    calls = []
+    real_compute_ppo_loss = train_module.compute_ppo_loss
+
+    def spy(network, episodes, reward_scale=100.0, entropy_coef=0.0, clip_epsilon=0.2):
+        calls.append(1)
+        return real_compute_ppo_loss(
+            network, episodes, reward_scale=reward_scale, entropy_coef=entropy_coef, clip_epsilon=clip_epsilon
+        )
+
+    monkeypatch.setattr(train_module, "compute_ppo_loss", spy)
+
+    train(
+        _small_network(),
+        iterations=3,
+        games_per_iteration=2,
+        ppo_epochs=4,
+        rng=random.Random(70),
+        checkpoint_dir=tmp_path / "checkpoints",
+        checkpoint_every=100,
+        metrics_path=tmp_path / "metrics.csv",
+    )
+
+    assert len(calls) == 3 * 4
+
+
+def test_train_runs_to_completion_with_ppo_epochs_set(tmp_path: Path):
+    history = train(
+        _small_network(),
+        iterations=2,
+        games_per_iteration=2,
+        ppo_epochs=3,
+        rng=random.Random(71),
+        checkpoint_dir=tmp_path / "checkpoints",
+        checkpoint_every=100,
+        metrics_path=tmp_path / "metrics.csv",
+    )
+
+    assert [m.iteration for m in history] == [1, 2]
+
+
+def test_training_changes_parameters_when_using_ppo_epochs(tmp_path: Path):
+    network = _small_network()
+    before = [p.detach().clone() for p in network.parameters()]
+
+    train(
+        network,
+        iterations=2,
+        games_per_iteration=3,
+        ppo_epochs=3,
+        rng=random.Random(72),
+        checkpoint_dir=tmp_path / "checkpoints",
+        checkpoint_every=100,
+        metrics_path=tmp_path / "metrics.csv",
+    )
+
+    after = list(network.parameters())
+    assert any(not torch.equal(b, a) for b, a in zip(before, after))
+
+
+def test_cli_ppo_epochs_and_clip_epsilon_flags_run_to_completion(tmp_path: Path, monkeypatch):
+    checkpoint_dir = tmp_path / "checkpoints"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train.py",
+            "--iterations",
+            "1",
+            "--games-per-iteration",
+            "2",
+            "--checkpoint-dir",
+            str(checkpoint_dir),
+            "--checkpoint-every",
+            "1",
+            "--metrics-path",
+            str(checkpoint_dir / "metrics.csv"),
+            "--seed",
+            "80",
+            "--ppo-epochs",
+            "3",
+            "--clip-epsilon",
+            "0.15",
+        ],
+    )
+
+    train_module._main()
+
+    assert (checkpoint_dir / "checkpoint_1.pt").exists()
 
 
 def test_training_actually_changes_the_networks_parameters(tmp_path: Path):
