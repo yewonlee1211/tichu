@@ -29,6 +29,19 @@ Turns a detected "good time to commit" moment into a low-friction, human-approve
 
 3. **Draft the commit**
    - Format per [git-workflow.md](../../rules/ecc/common/git-workflow.md): `<type>: <description>`, type ∈ {feat, fix, refactor, docs, test, chore, perf, ci}.
+   - **Tag the related milestone/phase, when there is one:**
+     - Read the Delivery Milestones table in `.claude/prds/*.prd.md` to get the milestone numbers and each one's linked `.claude/plans/*.plan.md`.
+     - For each candidate plan, check the staged files against two signals, in order of strength:
+       1. **Exact match** — the file is listed literally in the plan's `Files to Change` table.
+       2. **Directory match** — the file lives under a directory the plan's `Files to Change` table already established as belonging to that milestone (e.g. the M2 plan owns `ai/eval/`, `ai/agents/`, `ai/tichu_env/`, `ai/training/` — a new file under one of those counts even if it didn't exist when the plan was written).
+     - Judge the **commit as a whole**, not file-by-file — a commit doesn't need every staged file to match. If the substantive files clearly belong to one milestone's directory tree, tag the whole commit even if it also touches a small companion artifact outside that tree (e.g. a new Claude skill written specifically to exercise or narrate that milestone's code).
+     - If exactly one plan/phase clearly matches, prefix the subject: `[M<N> Phase<P>] <type>: <description>` (e.g. `[M2 Phase4] feat: ...`; use `Phase4~5` if the work spans a documented phase range, matching this repo's existing convention).
+     - Ask the user instead of guessing when it's genuinely ambiguous — e.g. staged files split roughly evenly across more than one plan/phase.
+     - Only omit the milestone tag when nothing in the diff is plausibly related to any milestone at all (e.g. a commit that's purely `.claude/` tooling/config with no companion milestone code alongside it).
+   - **Add a category tag when the commit is clearly about a recognizable cross-cutting concern rather than milestone feature work** — e.g. `[Docker]` (container/dev-environment changes, already used in this repo's history) or `[Tooling]` (`.claude/` skills, hooks, settings — dev workflow itself, not product code). Check `git log --oneline` for a tag spelling already in use before inventing a new one.
+     - If a milestone tag also applies, the milestone comes first: `[M<N> Phase<P>][Category] <type>: ...` (matches this repo's existing `[M1 Phase3][Docker]` precedent).
+     - If no milestone applies but a category clearly does, the category tag stands alone at the front: `[Tooling] <type>: ...`.
+     - Don't force a category tag onto ordinary milestone feature work that doesn't belong to a named cross-cutting concern — most commits should have zero or one tag type, not a category tag by default.
    - No `Co-Authored-By` trailer — attribution is disabled for this project.
    - Message body (if needed) explains *why*, not a restatement of the diff.
    - List the exact files to stage — never propose `git add -A` / `git add .`.

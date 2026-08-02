@@ -28,8 +28,9 @@ Ask for anything missing — don't invent a goal or a parent session the user di
 ## Steps
 
 1. **Gather the four inputs above.**
-2. **Propose a slug.** Format: `YYYY-MM-DD-<kebab-case-short-desc>`, derived from the 목적. Offer 2-3 candidates and let the user pick or edit one. Don't finalize without approval.
-3. **Create the session file** at `.claude/worklog/sessions/<slug>.md` (create the `sessions/` directory if it doesn't exist yet) using this template:
+2. **Check for file overlap with other active sessions.** For every row in `.claude/worklog/sessions-summary.md` with 상태 = 진행중, open its `sessions/<slug>.md` and compare its `관련 파일` entries against the new session's. Treat it as an overlap when paths are identical, or one is a directory containing the other (e.g. `ai/eval/` vs `ai/eval/train.py`). This is a **warning, not a block** — broad directory-level overlap is often fine. If any overlap is found, tell the user which session(s) and files overlap and ask whether to proceed anyway; don't silently continue or silently abort.
+3. **Propose a slug.** Format: `YYYY-MM-DD-<kebab-case-short-desc>`, derived from the 목적. Offer 2-3 candidates and let the user pick or edit one. Don't finalize without approval.
+4. **Create the session file** at `.claude/worklog/sessions/<slug>.md` (create the `sessions/` directory if it doesn't exist yet) using this template:
 
    ```markdown
    ---
@@ -60,9 +61,9 @@ Ask for anything missing — don't invent a goal or a parent session the user di
    (없음)
    ```
 
-4. **Add a row to the index** `.claude/worklog/sessions-summary.md`: `| <slug> | <목적 한 줄> | <상위 slug 또는 빈칸> | 진행중 |`.
-5. **Remember the slug for the rest of this conversation.** Do not write a separate pointer file — `/work-summary` and `commit-checkpoint`'s logging step rely on this conversation already knowing its own registered slug from having run this skill. If asked to register a session again later in the same conversation (e.g. the goal genuinely changed), treat it as a new registration and update what "the current slug" means from that point on.
-6. **Confirm to the user**: show the created file path and the index row.
+5. **Add a row to the index** `.claude/worklog/sessions-summary.md`: `| <slug> | <목적 한 줄> | <상위 slug 또는 빈칸> | 진행중 |`.
+6. **Remember the slug for the rest of this conversation.** Do not write a separate pointer file — `/work-summary` and `commit-checkpoint`'s logging step rely on this conversation already knowing its own registered slug from having run this skill. If asked to register a session again later in the same conversation (e.g. the goal genuinely changed), treat it as a new registration and update what "the current slug" means from that point on.
+7. **Confirm to the user**: show the created file path and the index row, and mention the overlap check result from step 2 (even if "no overlap found").
 
 ## Guardrails
 

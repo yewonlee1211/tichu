@@ -25,3 +25,6 @@ Thumbs.db
 
 # Local work log (personal context-recovery notes, not shared)
 .claude/worklog/
+
+# Cross-session coordination locks (e.g. worktree-merge)
+.claude/.locks/
