@@ -19,7 +19,8 @@ Turns a detected "good time to commit" moment into a low-friction, human-approve
 
 1. **Inspect state**
    - `git status --porcelain` — changed/untracked files
-   - `git diff` and `git diff --staged` — the actual content of the change
+   - `git diff --stat` and `git diff --staged --stat` — shape of the change without pulling full content yet
+   - Pull full `git diff`/`git diff --staged` content only for files whose purpose isn't obvious from the stat line alone (needed to judge mixed concerns in step 2, or to write an accurate body). Skip full-content diffing for files where the stat line is already enough (e.g. a single-purpose config/doc tweak).
    - `git log -5 --oneline` — match this repo's existing message style
 
    If there is nothing to commit, say so and stop.
@@ -29,16 +30,18 @@ Turns a detected "good time to commit" moment into a low-friction, human-approve
 
 3. **Draft the commit**
    - Format per [git-workflow.md](../../rules/ecc/common/git-workflow.md): `<type>: <description>`, type ∈ {feat, fix, refactor, docs, test, chore, perf, ci}.
+   - **Write the `<description>` in Korean.** Mixing in English technical terms/proper nouns is fine and expected (e.g. `feat: self-play 상대 풀 및 혼합 상대 학습 지원 추가`), but the description must not be entirely English (e.g. `chore: refine commit tagging, add session overlap check and worktree-merge` is not acceptable — rewrite it in Korean with English terms mixed in as needed). This applies to the subject line only; any tag prefixes (`[M<N> Phase<P>]`, `[Docker]`, `[Tooling]`, etc.) and the `<type>` keyword stay as-is.
    - **Tag the related milestone/phase, when there is one:**
-     - Read the Delivery Milestones table in `.claude/prds/*.prd.md` to get the milestone numbers and each one's linked `.claude/plans/*.plan.md`.
-     - For each candidate plan, check the staged files against two signals, in order of strength:
-       1. **Exact match** — the file is listed literally in the plan's `Files to Change` table.
-       2. **Directory match** — the file lives under a directory the plan's `Files to Change` table already established as belonging to that milestone (e.g. the M2 plan owns `ai/eval/`, `ai/agents/`, `ai/tichu_env/`, `ai/training/` — a new file under one of those counts even if it didn't exist when the plan was written).
+     - **Fast bypass first**: if every staged file falls under a path with no plausible milestone connection (`.claude/`, root-level config/docs, etc.) and none of them sit next to milestone code in the same commit, skip straight to the category-tag check below — don't open the PRD or any plan file at all.
+     - Otherwise, read only the Delivery Milestones table in `.claude/prds/*.prd.md` (not the whole file) to get the milestone numbers and each one's linked `.claude/plans/*.plan.md`.
+     - For each candidate plan, don't read the whole plan file — grep it for the `Files to Change` section (e.g. `Grep` for `Files to Change` with enough trailing context to capture the table) and check the staged files against two signals, in order of strength:
+       1. **Exact match** — the file is listed literally in that table.
+       2. **Directory match** — the file lives under a directory the table already established as belonging to that milestone (e.g. the M2 plan owns `ai/eval/`, `ai/agents/`, `ai/tichu_env/`, `ai/training/` — a new file under one of those counts even if it didn't exist when the plan was written).
      - Judge the **commit as a whole**, not file-by-file — a commit doesn't need every staged file to match. If the substantive files clearly belong to one milestone's directory tree, tag the whole commit even if it also touches a small companion artifact outside that tree (e.g. a new Claude skill written specifically to exercise or narrate that milestone's code).
      - If exactly one plan/phase clearly matches, prefix the subject: `[M<N> Phase<P>] <type>: <description>` (e.g. `[M2 Phase4] feat: ...`; use `Phase4~5` if the work spans a documented phase range, matching this repo's existing convention).
      - Ask the user instead of guessing when it's genuinely ambiguous — e.g. staged files split roughly evenly across more than one plan/phase.
      - Only omit the milestone tag when nothing in the diff is plausibly related to any milestone at all (e.g. a commit that's purely `.claude/` tooling/config with no companion milestone code alongside it).
-   - **Add a category tag when the commit is clearly about a recognizable cross-cutting concern rather than milestone feature work** — e.g. `[Docker]` (container/dev-environment changes, already used in this repo's history) or `[Tooling]` (`.claude/` skills, hooks, settings — dev workflow itself, not product code). Check `git log --oneline` for a tag spelling already in use before inventing a new one.
+   - **Add a category tag when the commit is clearly about a recognizable cross-cutting concern rather than milestone feature work** — e.g. `[Docker]` (container/dev-environment changes, already used in this repo's history) or `[Tooling]` (`.claude/` skills, hooks, settings — dev workflow itself, not product code). Only when a category tag looks plausible, check `git log --oneline` for a tag spelling already in use before inventing a new one — don't run this check on commits that clearly need neither tag.
      - If a milestone tag also applies, the milestone comes first: `[M<N> Phase<P>][Category] <type>: ...` (matches this repo's existing `[M1 Phase3][Docker]` precedent).
      - If no milestone applies but a category clearly does, the category tag stands alone at the front: `[Tooling] <type>: ...`.
      - Don't force a category tag onto ordinary milestone feature work that doesn't belong to a named cross-cutting concern — most commits should have zero or one tag type, not a category tag by default.
