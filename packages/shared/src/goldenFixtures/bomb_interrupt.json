@@ -1,0 +1,365 @@
+{
+  "name": "bomb_interrupt",
+  "description": "봄 인터럽트: 순서가 아닌 플레이어가 봄으로 트릭에 끼어듦",
+  "obsDim": 175,
+  "actionDim": 69,
+  "beforeState": {
+    "hands": [
+      [
+        {
+          "rank": "FIVE",
+          "suit": "SWORD"
+        }
+      ],
+      [],
+      [
+        {
+          "rank": "SEVEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "THREE",
+          "suit": "SWORD"
+        }
+      ],
+      []
+    ],
+    "pendingFinalCards": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "phase": "PLAYING",
+    "currentPlayer": 0,
+    "trickLeader": 0,
+    "trickCards": [],
+    "currentBest": null,
+    "currentStrength": 0.0,
+    "lastPlayerToAct": null,
+    "passesInARow": 0,
+    "finishedOrder": [],
+    "collectedTricks": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "largeTichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "tichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "mahjongWish": null
+  },
+  "afterOpenState": {
+    "hands": [
+      [],
+      [],
+      [
+        {
+          "rank": "SEVEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "THREE",
+          "suit": "SWORD"
+        }
+      ],
+      []
+    ],
+    "pendingFinalCards": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "phase": "PLAYING",
+    "currentPlayer": 1,
+    "trickLeader": 0,
+    "trickCards": [
+      {
+        "rank": "FIVE",
+        "suit": "SWORD"
+      }
+    ],
+    "currentBest": {
+      "comboType": "SINGLE",
+      "cards": [
+        {
+          "rank": "FIVE",
+          "suit": "SWORD"
+        }
+      ],
+      "length": 1,
+      "rankStrength": 5.0,
+      "isLonePhoenix": false
+    },
+    "currentStrength": 5.0,
+    "lastPlayerToAct": 0,
+    "passesInARow": 0,
+    "finishedOrder": [
+      0
+    ],
+    "collectedTricks": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "largeTichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "tichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "mahjongWish": null
+  },
+  "legalActionsForPlayer2BeforeBomb": [
+    {
+      "combo": {
+        "comboType": "BOMB_QUAD",
+        "cards": [
+          {
+            "rank": "SEVEN",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "SEVEN",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "SEVEN",
+            "suit": "JADE"
+          },
+          {
+            "rank": "SEVEN",
+            "suit": "STAR"
+          }
+        ],
+        "length": 4,
+        "rankStrength": 7.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.2857142984867096,
+        0.4375,
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "bombCards": [
+    {
+      "rank": "SEVEN",
+      "suit": "SWORD"
+    },
+    {
+      "rank": "SEVEN",
+      "suit": "PAGODA"
+    },
+    {
+      "rank": "SEVEN",
+      "suit": "JADE"
+    },
+    {
+      "rank": "SEVEN",
+      "suit": "STAR"
+    }
+  ],
+  "afterBombState": {
+    "hands": [
+      [],
+      [],
+      [
+        {
+          "rank": "THREE",
+          "suit": "SWORD"
+        }
+      ],
+      []
+    ],
+    "pendingFinalCards": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "phase": "PLAYING",
+    "currentPlayer": 3,
+    "trickLeader": 0,
+    "trickCards": [
+      {
+        "rank": "FIVE",
+        "suit": "SWORD"
+      },
+      {
+        "rank": "SEVEN",
+        "suit": "SWORD"
+      },
+      {
+        "rank": "SEVEN",
+        "suit": "PAGODA"
+      },
+      {
+        "rank": "SEVEN",
+        "suit": "JADE"
+      },
+      {
+        "rank": "SEVEN",
+        "suit": "STAR"
+      }
+    ],
+    "currentBest": {
+      "comboType": "BOMB_QUAD",
+      "cards": [
+        {
+          "rank": "SEVEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "STAR"
+        }
+      ],
+      "length": 4,
+      "rankStrength": 7.0,
+      "isLonePhoenix": false
+    },
+    "currentStrength": 7.0,
+    "lastPlayerToAct": 2,
+    "passesInARow": 0,
+    "finishedOrder": [
+      0
+    ],
+    "collectedTricks": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "largeTichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "tichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "mahjongWish": null
+  }
+}

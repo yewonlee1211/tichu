@@ -1,0 +1,839 @@
+{
+  "name": "grand_tichu",
+  "description": "그랜드 티츄: 성공한 그랜드 티츄 콜의 스코어링",
+  "obsDim": 175,
+  "actionDim": 69,
+  "dealtState": {
+    "hands": [
+      [
+        {
+          "rank": "SEVEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "KING",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "KING",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "JACK",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "TWO",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "JADE"
+        }
+      ],
+      [
+        {
+          "rank": "MAHJONG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "NINE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SIX",
+          "suit": "STAR"
+        },
+        {
+          "rank": "PHOENIX",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "ACE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SIX",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TEN",
+          "suit": "STAR"
+        }
+      ],
+      [
+        {
+          "rank": "SEVEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SIX",
+          "suit": "JADE"
+        },
+        {
+          "rank": "DRAGON",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "THREE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "NINE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "STAR"
+        },
+        {
+          "rank": "THREE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "JACK",
+          "suit": "JADE"
+        }
+      ],
+      [
+        {
+          "rank": "FOUR",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TWO",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "JADE"
+        },
+        {
+          "rank": "ACE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "KING",
+          "suit": "JADE"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "JADE"
+        }
+      ]
+    ],
+    "pendingFinalCards": [
+      [
+        {
+          "rank": "NINE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "TEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "PAGODA"
+        }
+      ],
+      [
+        {
+          "rank": "SEVEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TWO",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "SWORD"
+        }
+      ],
+      [
+        {
+          "rank": "DOG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "KING",
+          "suit": "STAR"
+        },
+        {
+          "rank": "TWO",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "SWORD"
+        }
+      ],
+      [
+        {
+          "rank": "SIX",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "NINE",
+          "suit": "PAGODA"
+        }
+      ]
+    ],
+    "phase": "LARGE_TICHU",
+    "currentPlayer": 0,
+    "trickLeader": 0,
+    "trickCards": [],
+    "currentBest": null,
+    "currentStrength": 0.0,
+    "lastPlayerToAct": null,
+    "passesInARow": 0,
+    "finishedOrder": [],
+    "collectedTricks": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "largeTichuCalls": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "tichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "mahjongWish": null
+  },
+  "afterLargeTichuState": {
+    "hands": [
+      [
+        {
+          "rank": "SEVEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "KING",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "KING",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "JACK",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "TWO",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "NINE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "TEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "PAGODA"
+        }
+      ],
+      [
+        {
+          "rank": "MAHJONG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "NINE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SIX",
+          "suit": "STAR"
+        },
+        {
+          "rank": "PHOENIX",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "ACE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SIX",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TWO",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "SWORD"
+        }
+      ],
+      [
+        {
+          "rank": "SEVEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SIX",
+          "suit": "JADE"
+        },
+        {
+          "rank": "DRAGON",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "THREE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "NINE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "STAR"
+        },
+        {
+          "rank": "THREE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "JACK",
+          "suit": "JADE"
+        },
+        {
+          "rank": "DOG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "KING",
+          "suit": "STAR"
+        },
+        {
+          "rank": "TWO",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "SWORD"
+        }
+      ],
+      [
+        {
+          "rank": "FOUR",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TWO",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "JADE"
+        },
+        {
+          "rank": "ACE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "KING",
+          "suit": "JADE"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SIX",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "NINE",
+          "suit": "PAGODA"
+        }
+      ]
+    ],
+    "pendingFinalCards": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "phase": "EXCHANGE",
+    "currentPlayer": 0,
+    "trickLeader": 0,
+    "trickCards": [],
+    "currentBest": null,
+    "currentStrength": 0.0,
+    "lastPlayerToAct": null,
+    "passesInARow": 0,
+    "finishedOrder": [],
+    "collectedTricks": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "largeTichuCalls": [
+      true,
+      false,
+      false,
+      false
+    ],
+    "tichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "mahjongWish": null
+  },
+  "finishedState": {
+    "hands": [
+      [],
+      [],
+      [],
+      [
+        {
+          "rank": "FOUR",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TWO",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "JADE"
+        },
+        {
+          "rank": "ACE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "KING",
+          "suit": "JADE"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SIX",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "NINE",
+          "suit": "PAGODA"
+        }
+      ]
+    ],
+    "pendingFinalCards": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "phase": "ROUND_OVER",
+    "currentPlayer": 0,
+    "trickLeader": 0,
+    "trickCards": [],
+    "currentBest": null,
+    "currentStrength": 0.0,
+    "lastPlayerToAct": null,
+    "passesInARow": 0,
+    "finishedOrder": [
+      0,
+      1,
+      2
+    ],
+    "collectedTricks": [
+      [
+        {
+          "rank": "KING",
+          "suit": "SWORD"
+        }
+      ],
+      [],
+      [],
+      []
+    ],
+    "largeTichuCalls": [
+      true,
+      false,
+      false,
+      false
+    ],
+    "tichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "mahjongWish": null
+  },
+  "observationForCaller": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.10000000149011612,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0
+  ],
+  "teamScoreDeltas": {
+    "team0": 235,
+    "team1": 0
+  }
+}
