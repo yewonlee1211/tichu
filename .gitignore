@@ -16,6 +16,7 @@ ai/game_logs/
 node_modules/
 dist/
 build/
+coverage/
 
 # Editor / OS
 .vscode/
