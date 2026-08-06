@@ -24,9 +24,10 @@ Brings a finished worktree session's branch back into the main branch via rebase
 
 1. **Acquire the merge lock.** Only one worktree-merge should be in flight at a time, since it eventually touches the shared main branch.
    - Generate a random identifier once at the start of this run — e.g. `SID=$(date +%s)-$RANDOM` — and reuse that exact value for every step below in this same invocation. (`$CLAUDE_SESSION_ID`/`$ECC_SESSION_ID` are only injected into hook processes, not into ordinary Bash tool calls — confirmed empty when checked directly — so they can't be used here.)
-   - Ensure `.claude/.locks/` exists.
-   - Check `.claude/.locks/main-merge.lock`:
-     - Doesn't exist → create it atomically: `set -o noclobber; echo "$SID $(date)" > .claude/.locks/main-merge.lock` (bash `noclobber` makes this an exclusive create, not a check-then-write race).
+   - `.claude/.locks/` is gitignored, so it is **not** shared by `git worktree add` — each worktree would otherwise get its own separate, empty `.locks/` directory, which would make the lock a no-op (two worktrees could each create their own "lock" and never see each other). Always resolve it against the main worktree, from whichever worktree this skill is running in: `MAIN_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"`, then use `$MAIN_ROOT/.claude/.locks/main-merge.lock` for every reference below.
+   - Ensure `$MAIN_ROOT/.claude/.locks/` exists.
+   - Check `$MAIN_ROOT/.claude/.locks/main-merge.lock`:
+     - Doesn't exist → create it atomically: `set -o noclobber; echo "$SID $(date)" > "$MAIN_ROOT/.claude/.locks/main-merge.lock"` (bash `noclobber` makes this an exclusive create, not a check-then-write race).
      - Exists, content starts with `$SID` → it's already ours (e.g. resuming after a conflict pause), proceed.
      - Exists, owned by someone else, and its mtime is recent (< ~30 minutes) → **stop**, tell the user another session appears to be merging right now.
      - Exists, owned by someone else, mtime older than ~30 minutes → likely abandoned (crashed mid-merge); tell the user and ask before removing it and taking over — don't silently reclaim a merge lock the way a plain edit lock might, since an in-progress conflict resolution can legitimately take a while.
@@ -39,7 +40,7 @@ Brings a finished worktree session's branch back into the main branch via rebase
 
 4. **If the rebase reports conflicts, do not resolve blind:**
    - List the conflicted files.
-   - For each one, check `.claude/worklog/sessions-summary.md` and the relevant `sessions/<slug>.md` files for **any session** (this branch's own, and others) whose `관련 파일` or `진행 로그` mentions that file — read their stated intent/decisions so the resolution reflects *why* each side changed what it changed, not just a blind textual pick.
+   - For each one, check `$MAIN_ROOT/.claude/worklog/sessions-summary.md` and the relevant `sessions/<slug>.md` files (same `$MAIN_ROOT` resolved in step 1) for **any session** (this branch's own, and others) whose `관련 파일` or `진행 로그` mentions that file — read their stated intent/decisions so the resolution reflects *why* each side changed what it changed, not just a blind textual pick.
    - Propose a resolution per file and show it to the user before staging it — this is a silent code change if done wrong, treat it with the same care as `commit-checkpoint`'s approval step.
    - After approval: `git add <resolved files>`, `git rebase --continue`. Repeat until the rebase finishes.
    - If it gets too tangled, `git rebase --abort` is always available — offer it rather than pushing through a resolution nobody's confident in.
@@ -48,7 +49,7 @@ Brings a finished worktree session's branch back into the main branch via rebase
    - Find where main is checked out: `git worktree list`.
    - From *that* worktree, run `git merge --ff-only <feature-branch>`. It should fast-forward cleanly since the branch was just rebased onto main's tip — if it doesn't fast-forward, main moved again since step 2; go back to step 2.
 
-6. **Release the lock**: remove `.claude/.locks/main-merge.lock` (only if it's owned by this `$SID`).
+6. **Release the lock**: remove `$MAIN_ROOT/.claude/.locks/main-merge.lock` (only if it's owned by this `$SID`).
 
 7. **Once a remote exists** (not yet the case in this repo): before step 5, push the rebased branch (`git push --force-with-lease origin <feature-branch>`) and either open a PR or merge remotely instead of merging locally — never force-push a shared branch without the user's explicit go-ahead.
 

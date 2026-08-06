@@ -21,9 +21,19 @@ This conversation must have a session slug registered via [session-start](../ses
 - Say so plainly, and offer to run `/session-start` first.
 - Do not invent or guess a slug, and do not silently create one.
 
+## Shared paths across worktrees
+
+`.claude/worklog/` is gitignored, so it is **not** carried into a `git worktree add` checkout — each worktree gets its own separate, empty copy unless you resolve the main worktree's real location first:
+
+```bash
+MAIN_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
+```
+
+Every `.claude/worklog/...` path below means `$MAIN_ROOT/.claude/worklog/...`, regardless of which worktree this skill is running in.
+
 ## Steps
 
-1. **Locate the session file** — `.claude/worklog/sessions/<slug>.md`, using the slug registered earlier in this conversation.
+1. **Locate the session file** — `.claude/worklog/sessions/<slug>.md` (see path resolution above), using the slug registered earlier in this conversation.
 
 2. **Reconstruct what happened since the file was last written**, from this conversation's own history (messages, tool calls, files touched, commits made) — not from re-reading old sections of the file as if they were new information.
 
@@ -33,11 +43,11 @@ This conversation must have a session slug registered via [session-start](../ses
    - `현재 다음 작업`: overwrite with the actual next step, as specifically as possible.
    - `미해결 블로커`: overwrite with whatever is still unresolved (or "없음").
    - `상태`: update to `완료` if the user confirms the session's goal is done, `보류` if it's being paused indefinitely, otherwise leave as `진행중`.
-   - If `상태` changed, also update the matching row in `.claude/worklog/sessions-summary.md`.
+   - If `상태` changed, also update the matching row in `.claude/worklog/sessions-summary.md` (same path resolution as above).
 
 4. **Resolve the hierarchy** for display: read `상위 세션` in this file, and if set, follow it in `sessions-summary.md` up the chain (parent of parent, etc.) until empty, to show which larger effort this session belongs to.
 
-5. **Find outsourced work**: scan `.claude/worklog/sessions-summary.md` for rows whose 상위 세션 equals this session's slug — these are sessions that were spawned from this one in another window. List them with their 목적 and 상태.
+5. **Find outsourced work**: scan `.claude/worklog/sessions-summary.md` (main worktree copy) for rows whose 상위 세션 equals this session's slug — these are sessions that were spawned from this one in another window. List them with their 목적 and 상태.
 
 6. **Present the summary to the user**, covering exactly these four things:
    1. 이 세션의 목표 (from `목적`)

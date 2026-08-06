@@ -25,6 +25,16 @@ Before writing anything, make sure you have:
 
 Ask for anything missing — don't invent a goal or a parent session the user didn't state.
 
+## Shared paths across worktrees
+
+`.claude/worklog/` and `.claude/.locks/` are gitignored, so a `git worktree add` checkout does **not** carry them over — each worktree would otherwise get its own separate, empty copy, breaking both cross-session continuity and worktree-merge's merge lock (a lock only works if every worktree sees the same file). Never treat these as relative to the current worktree. Resolve the main worktree's actual location first, from any worktree:
+
+```bash
+MAIN_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
+```
+
+Every `.claude/worklog/...` or `.claude/.locks/...` path mentioned anywhere in this skill means `$MAIN_ROOT/.claude/worklog/...` / `$MAIN_ROOT/.claude/.locks/...` — the same physical files regardless of which worktree registered or is reading the session. Nothing needs to be copied for this to work.
+
 ## Steps
 
 1. **Gather the four inputs above.**
@@ -37,7 +47,20 @@ Ask for anything missing — don't invent a goal or a parent session the user di
      - Propose a default branch name and worktree path derived from the slug — branch `<slug>`, path `../<repo-dir-name>-<slug>` (sibling directory to this repo). Let the user accept or edit either.
      - Run `git worktree add <path> -b <branch> <base-branch>`.
      - If it fails (e.g. path collision, dirty base branch), report the error and ask the user how to proceed — don't silently fall back to no-worktree and don't let it block registering the session itself if the user wants to continue without one.
-     - On success, remember the path and branch for step 5's template and tell the user their session's files now live at `<path>`, not here — further work on this session should happen in a Claude Code window opened at that path.
+     - On success, run `git worktree list` to read the **absolute** paths of the main worktree (`$MAIN_ABS`) and the new worktree (`$WT_ABS`) — every command shown to the user below uses absolute paths specifically so someone unfamiliar with cmd never has to work out "which folder am I supposed to run this from."
+     - `.claude/worklog/` and `.claude/.locks/` need nothing copied — see "Shared paths across worktrees" above, they already resolve to the main worktree automatically.
+     - **If this session's 관련 파일 touches `ai/`**, show this block and tell the user to paste it into any Command Prompt window (Win+R → `cmd` → Enter is enough — it does not matter what folder it opens in, since every path below is already absolute) and run it themselves — do not run it yourself, since checkpoint/log directories can be large:
+       ```cmd
+       robocopy "<MAIN_ABS>\ai\checkpoints" "<WT_ABS>\ai\checkpoints" /E
+       robocopy "<MAIN_ABS>\ai\game_logs" "<WT_ABS>\ai\game_logs" /E
+       ```
+       (`ai/game_logs` is optional — mention it but don't insist if the session has no use for past logs.)
+     - **If this session's 관련 파일 touches `packages/`**, also show this block (this one includes `cd /d` so the user doesn't need to figure out the right folder themselves — pnpm needs to run from inside the new worktree):
+       ```cmd
+       cd /d "<WT_ABS>"
+       pnpm install
+       ```
+     - Remember `$WT_ABS`/branch for step 5's template, and tell the user their session's files now live at `<WT_ABS>`, not here — further work on this session should happen in a Claude Code window opened at that path.
 5. **Create the session file** at `.claude/worklog/sessions/<slug>.md` (create the `sessions/` directory if it doesn't exist yet) using this template:
 
    ```markdown

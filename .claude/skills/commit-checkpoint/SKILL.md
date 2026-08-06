@@ -56,11 +56,11 @@ Turns a detected "good time to commit" moment into a low-friction, human-approve
 
 5. **Commit**
    - `git add <specific files>`
-   - `git commit -m "<approved message>"`
+   - `git commit -m "<approved message>" -- <specific files>` — **always repeat the exact same file list as a pathspec on the commit itself**, never a bare `git commit -m "..."`. In this repo, multiple sessions can share one working directory/index outside a worktree; a bare commit picks up *whatever happens to be staged at that instant*, including files another session staged between your `add` and `commit`. The pathspec makes the commit atomic with respect to exactly the files you reviewed, regardless of what else is staged.
    - `git status` to confirm the result.
 
 6. **Log it (if a session is registered)**
-   - If this conversation registered a session via [session-start](../session-start/SKILL.md), append one `진행 로그` entry to that session's file (`.claude/worklog/sessions/<slug>.md`) — short sha, commit subject, and what the user actually asked for/decided in this unit of work, not a restatement of the diff.
+   - If this conversation registered a session via [session-start](../session-start/SKILL.md), append one `진행 로그` entry to that session's file. `.claude/worklog/` is gitignored, so inside a worktree its path must be resolved against the main worktree, not the current one: `MAIN_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"`, then write to `$MAIN_ROOT/.claude/worklog/sessions/<slug>.md` — short sha, commit subject, and what the user actually asked for/decided in this unit of work, not a restatement of the diff.
    - If no session is registered in this conversation, skip silently — don't prompt the user to register one just to log a commit.
    - This step is best-effort: never let a log write failure block or undo a completed commit.
 
