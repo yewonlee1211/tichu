@@ -1,116 +1,149 @@
-# Plan: 사람 vs 사람 온라인 대전
+# Plan: 사람 vs 사람 온라인 대전 + AI 대국(혼자 모드, 브라우저 로컬 추론)
 
 **Source PRD**: `.claude/prds/tichu-online.prd.md`
-**Selected Milestone**: Milestone 1 — 사람 vs 사람 온라인 대전 (두 명 이상의 사용자가 실시간으로 온라인에서 Tichu를 플레이할 수 있다)
+**Selected Milestone**: Milestone 1 — 사람 vs 사람 온라인 대전, Milestone 2(AI 대결)와의 웹 연동 지점 포함
 **Complexity**: Large
 
 ## Summary
-현재 저장소에는 `.claude/`(ECC 하네스 설정)만 존재하고 실제 프로젝트 코드는 없는 완전한 그린필드 상태다. 이번 플랜은 4인용 Tichu를 실시간으로 사람 vs 사람으로 플레이할 수 있는 최소 기반을 구축한다: 카드 규칙 엔진(공유 패키지) → 서버 권위적 WebSocket 게임 서버(방 생성/입장, 턴 진행, 재접속) → React 클라이언트(로비 + 게임 테이블 UI). Milestone 2(AI 대결)와 Milestone 3(로그 수집)이 이 구조 위에 얹힐 수 있도록, 규칙 엔진은 입출력에서 완전히 분리하고 서버는 모든 상태 전이를 이벤트로 발행하는 구조로 설계한다.
+두 차례 아키텍처 논의를 거쳐 확정된 구조:
 
-기술 스택(사용자 결정): TypeScript 풀스택(Node.js 서버 + React 프론트엔드), 커스텀 WebSocket 서버(서버 권위적 상태), pnpm workspaces 모노레포.
+1. **사람 vs 사람**은 Node.js + TypeScript WS 서버가 규칙 엔진(TS 포트)을 권위적으로 실행한다. Python 백엔드는 이 경로에 전혀 관여하지 않는다.
+2. **AI 대국(MVP)은 서버를 아예 거치지 않는 순수 브라우저 단일플레이 모드**다 — 사용자 1명 + AI 봇 3자리, 랭킹 없음(연습/재미 목적), **완전 오프라인 플레이 가능**해야 한다. 최초 로드 시 번들이 커지는 것은 감수한다.
+   - AI 모델은 `ai/agents/policy_network.py`의 학습된 가중치를 **ONNX로 내보내 브라우저에서 onnxruntime-web(WASM)으로 직접 실행**한다. 서버 왕복도, 별도 Python 추론 프로세스도 없다 — "매 턴 API 호출 비용"이라는 원래 우려 자체가 구조적으로 사라진다.
+   - 모델 가중치가 브라우저에 그대로 노출되는 것은 **사용자가 수용한 리스크**다(랭킹 없음, 크게 개의치 않음). 다만 캐주얼한 추출(우클릭 저장/URL 직접 접근)을 막는 가벼운 바이트 인코딩 정도는 적용한다 — 진짜 보안이 아니라 마찰(friction) 수준으로 기대치를 맞춘다.
+   - M2 모델은 아직 학습 중이므로, ONNX export는 **체크포인트 iteration을 캐시 키로 삼아 버전 관리**한다(모델이 나중에 고정되면 이 버전 로직은 그대로 두되 사실상 갱신이 멈춘다).
+3. **혼합 방(사람+AI 같은 방)은 MVP 범위 밖**, 추후 과제로 명시적으로 미룬다. 다만 "상태+합법액션 → 선택된 액션"을 계산하는 AI 의사결정 함수는 모델 로딩/캐싱(브라우저 전용 코드)과 분리해서 짜, 나중에 서버(Node, `onnxruntime-node`)에서도 같은 함수를 재사용해 혼합 방을 지원할 수 있는 여지만 남겨둔다(지금 구현하지 않음).
+4. TS 규칙 엔진(및 신규 encoding 포트)은 그린필드로 손으로 옮기지 않고, `ai/tichu_env`의 기존 테스트에서 뽑은 **골든 픽스처**로 검증해 두 언어 구현이 갈라지는 위험을 없앤다.
+
+**진행 순서(어디서부터 시작할지)**: Phase 1(공유 규칙 엔진)과 Phase 3(AI 혼자 모드)은 서로 독립적이라 병행 가능하다. Phase 2(멀티플레이어 서버)는 Phase 1 완료 후 필요하지만, Phase 3은 Phase 1의 `encoding.ts`만 있으면 되므로 그 직후 바로 시작 가능하다.
 
 ## Patterns to Mirror
-그린필드 프로젝트이므로 미러링할 기존 코드 패턴이 없다. 대신 이번 마일스톤에서 이후 코드가 따라야 할 초기 컨벤션을 다음과 같이 확립한다:
-
-| Category | 결정 사항 |
-|---|---|
-| Naming | 파일/함수: `camelCase`, 타입/컴포넌트: `PascalCase`, 상수: `UPPER_SNAKE_CASE` (rules/common/coding-style.md 준수) |
-| Error handling | 규칙 엔진은 불변 값 객체 + `Result<T, E>` 스타일 반환(예외 대신 명시적 에러 값)으로 잘못된 카드 조합/턴 위반을 표현. 서버는 클라이언트에 `{type: "ERROR", code, message}` 프로토콜 메시지로 전달 |
-| Logging | 서버는 구조화 로그(JSON) 사용, Milestone 3에서 재사용할 수 있도록 게임 이벤트 로그와 운영 로그를 분리 |
-| Data access | Milestone 1은 영속 저장소 없음 — 방/게임 상태는 서버 메모리(in-process Map)에만 보관. DB 도입은 Milestone 3(로그 수집)에서 다룸 |
-| Tests | Vitest 사용, 규칙 엔진은 순수 함수 단위 테스트 위주(AAA 패턴), 서버는 WebSocket 통합 테스트 |
+| Category | Source | Pattern |
+|---|---|---|
+| Naming (Python) | `ai/agents/policy_network.py` | `snake_case`, 타입 힌트 필수, `from __future__ import annotations` |
+| Immutability (Python) | `ai/tichu_env/state.py:25-42` | `@dataclass(frozen=True)` + `replace`로 새 상태 반환 |
+| Error handling (Python) | `ai/training/train.py:225-238` | 잘못된 입력은 즉시 `ValueError` |
+| Data access (Python) | `ai/training/train.py:42-72` | `_atomic_torch_save`로 원자적 체크포인트 기록 — export 파이프라인이 읽을 때도 반쯤 쓰인 파일 걱정 없음 |
+| 인코딩 계약 | `ai/tichu_env/encoding.py` | `OBS_DIM`/`ACTION_DIM`, `encode_observation`/`encode_action`/`encode_legal_actions` — TS 포트가 그대로 미러링해야 하는 원본 |
+| Model I/O 계약 | `ai/agents/policy_network.py:60-74` | `forward(obs, action_vectors) -> (action_logits, state_value)` — ONNX export의 입출력 이름/축을 여기 맞춤 |
+| Tests (Python) | `ai/tests/test_state.py`, `test_combinations.py`, `test_encoding.py` | `pytest`, 엣지케이스(봄/더블아웃/마지막 카드 이관) 명시적 커버 — TS 골든 테스트의 원본 |
+| Infra | `docker-compose.yml`, `ai/Dockerfile` | Python 3.14/PyTorch wheel 미스매치로 Docker 채택(handoff 문서) — ONNX export 스크립트도 같은 컨테이너에서 실행 |
+| Naming/Errors/Tests (TS, 신규 컨벤션) | 이번 플랜에서 확정 | 파일/함수 `camelCase`, 타입/컴포넌트 `PascalCase`, 규칙 엔진은 예외 대신 `Result<T,E>` 스타일, 서버는 `{type:"ERROR",code,message}`, Vitest |
 
 ## Files to Change
 | File | Action | Why |
 |---|---|---|
-| `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json` | CREATE | pnpm workspaces 모노레포 루트 설정 |
-| `packages/shared/src/cards.ts` | CREATE | 56장 덱(일반 52 + Dog/Mahjong/Phoenix/Dragon) 모델 및 생성/셔플 |
-| `packages/shared/src/combinations.ts` | CREATE | 카드 조합 판정(싱글/페어/트리플/스트레이트/풀하우스/봄) 및 비교(강도) 로직 |
-| `packages/shared/src/gameState.ts` | CREATE | 불변 게임 상태 타입 + 상태 전이 리듀서(딜, 교환, 턴, 트릭, 티츄 콜, 라운드 종료) |
-| `packages/shared/src/scoring.ts` | CREATE | 라운드 스코어링(더블 아웃, 마지막 카드 트릭, 티츄/그랜드 티츄 보너스·패널티) |
-| `packages/shared/src/protocol.ts` | CREATE | 클라이언트-서버 WebSocket 메시지 타입 정의(공유) |
-| `packages/shared/src/*.test.ts` | CREATE | 규칙 엔진 단위 테스트 (커버리지 80%+ 목표) |
-| `packages/server/src/index.ts` | CREATE | WebSocket 서버 엔트리포인트 |
-| `packages/server/src/room.ts` | CREATE | 방 생성/입장/퇴장, 좌석 배정(4인), 방 코드 발급 |
-| `packages/server/src/session.ts` | CREATE | 연결-플레이어 세션 매핑, 재접속 토큰 처리 |
-| `packages/server/src/gameServer.ts` | CREATE | 방별 게임 루프: 액션 수신 → 규칙 엔진 호출 → 상태 브로드캐스트 |
-| `packages/server/src/*.test.ts` | CREATE | 방 생명주기 + 게임 흐름 통합 테스트 |
-| `packages/client/` (Vite + React) | CREATE | 로비(방 생성/입장) + 게임 테이블(손패, 트릭, 액션 버튼) UI |
-| `packages/client/src/ws/useGameSocket.ts` | CREATE | WebSocket 연결/재연결 훅, 프로토콜 메시지 송수신 |
-| `e2e/full-game.spec.ts` (Playwright) | CREATE | 4개 브라우저 컨텍스트로 한 판 전체 플레이 E2E |
-| `.claude/prds/tichu-online.prd.md` | UPDATE | Milestone 1 status → in-progress, Plan 경로 기록 |
+| `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json` | CREATE | pnpm workspaces 모노레포 루트 |
+| `packages/shared/src/cards.ts` | CREATE | `ai/tichu_env/cards.py` 포팅 |
+| `packages/shared/src/combinations.ts` | CREATE | `ai/tichu_env/combinations.py` 포팅 |
+| `packages/shared/src/gameState.ts` | CREATE | `ai/tichu_env/state.py` 포팅 |
+| `packages/shared/src/scoring.ts` | CREATE | `ai/tichu_env/scoring.py` 포팅 |
+| `packages/shared/src/encoding.ts` | CREATE | `ai/tichu_env/encoding.py` 포팅 — 브라우저에서 관측/액션 벡터를 만들기 위해 필요 |
+| `packages/shared/src/protocol.ts` | CREATE | 사람 vs 사람 WS 메시지 타입(MVP는 AI 좌석 관련 메시지 없음 — 향후 확장 지점으로만 문서화) |
+| `packages/shared/src/goldenFixtures/*.json` | CREATE | Python에서 뽑은 골든 픽스처(상태 전이 + 인코딩 벡터 값) |
+| `packages/shared/src/*.test.ts` | CREATE | 골든 픽스처 기반 단위 테스트 (80%+ 커버리지) |
+| `packages/server/src/index.ts`, `room.ts`, `session.ts`, `gameServer.ts` | CREATE | 사람 vs 사람 전용 WS 서버(방/좌석/재접속/게임 루프) — AI 좌석 처리 없음 |
+| `packages/server/src/*.test.ts` | CREATE | 방/게임 흐름 통합 테스트 |
+| `packages/client/` (Vite + React) | CREATE | 로비 + 게임 테이블(사람 vs 사람), 별도 "AI와 연습하기" 진입점 |
+| `packages/client/src/ws/useGameSocket.ts` | CREATE | 사람 vs 사람용 WS 훅 |
+| `packages/client/src/ai/decideAiMove.ts` | CREATE | **순수 함수**: (관측 벡터, 후보 액션 벡터, ONNX 세션) → 선택된 액션. 모델 로딩/캐싱과 분리 — 향후 서버 재사용 대비 |
+| `packages/client/src/ai/loadModel.ts` | CREATE | onnxruntime-web 세션 생성, Cache Storage로 오프라인 캐싱, 체크포인트 iteration 버전 태그로 캐시 무효화 |
+| `packages/client/src/ai/soloGame.ts` | CREATE | 서버 없이 `packages/shared` 규칙 엔진 + `decideAiMove`로 진행하는 혼자 모드 게임 루프 |
+| `packages/client/src/sw.ts` (Service Worker) | CREATE | 모델/엔진 자산 오프라인 캐싱 |
+| `ai/export/export_onnx.py` | CREATE | `checkpoint_*.pt` state_dict → `TichuPolicyValueNet` 로드 → ONNX export(동적 축: 후보 액션 개수). 입출력 이름/shape을 브라우저 쪽과 고정 계약으로 문서화 |
+| `ai/export/obfuscate.py` (또는 export 스크립트 내 유틸) | CREATE | 내보낸 ONNX 바이트를 가벼운 reversible 인코딩(예: XOR)으로 감싸 정적 파일 그대로 다운로드되지 않게 함 |
+| `ai/tests/test_export_onnx.py` | CREATE | export된 ONNX 모델이 원본 PyTorch 모델과 동일한 출력을 내는지 parity 테스트 |
+| `e2e/full-game.spec.ts` (사람 vs 사람), `e2e/solo-ai.spec.ts` (혼자 모드, 오프라인 시뮬레이션 포함) | CREATE | Playwright E2E |
+| `.claude/prds/tichu-online.prd.md` | UPDATE | Milestone 1 상태 갱신(완료) |
 
 ## Tasks
 
 ### Phase 0 — 모노레포 스캐폴드
-#### Task 1: 워크스페이스 초기화
-- **Action**: `pnpm-workspace.yaml`(`packages/*`), 루트 `package.json`(scripts: `dev`, `build`, `test`, `lint`, `typecheck`), 공통 `tsconfig.base.json`, ESLint/Prettier 설정 생성
-- **Mirror**: 신규 컨벤션(위 표) 최초 적용
-- **Validate**: `pnpm install`이 에러 없이 완료
+#### Task 1: 로컬 Node/pnpm 환경 확인 및 워크스페이스 초기화
+- **Action**: Node/pnpm 버전 확인 후 `pnpm-workspace.yaml`, 루트 `package.json`, `tsconfig.base.json`, ESLint/Prettier 생성
+- **Validate**: `pnpm install` 정상 완료
 
 #### Task 2: 패키지 스캐폴드
-- **Action**: `packages/shared`, `packages/server`, `packages/client`(Vite React+TS 템플릿) 생성, 상호 참조를 위한 workspace 의존성 연결
-- **Mirror**: -
+- **Action**: `packages/shared`, `packages/server`, `packages/client` 생성, workspace 의존성 연결
 - **Validate**: `pnpm -w typecheck` 통과(빈 프로젝트 기준)
 
-### Phase 1 — 공유 규칙 엔진 (`packages/shared`)
-#### Task 3: 카드/덱 모델
-- **Action**: `cards.ts`에 Suit/Rank/특수카드(Dog, Mahjong, Phoenix, Dragon) 타입, 56장 덱 생성 및 셔플 함수 구현
-- **Validate**: 단위 테스트로 덱 크기(56), 중복 없음, 셔플 후 분포 검증
+### Phase 1 — 공유 규칙 엔진 + 인코딩 (`packages/shared`) — Python을 참조 오라클로
+#### Task 3: 골든 픽스처 생성 스크립트
+- **Action**: `ai/tichu_env` 위에서 결정론적 시드로 대표 시나리오(정상 라운드/봄 인터럽트/더블 아웃/마지막 카드 이관/그랜드 티츄) 실행 → 입력 상태, 기대 결과, **`encode_observation`/`encode_action`의 실제 벡터 값**까지 JSON으로 dump
+- **Validate**: `ai/tests/test_state.py`, `test_encoding.py`가 커버하는 케이스 수만큼 픽스처 생성
+- **Why**: 규칙 판정뿐 아니라 관측/액션 인코딩까지 숫자 단위로 일치해야 브라우저에서 계산한 벡터를 그대로 ONNX 모델에 넣었을 때 학습 때와 같은 입력이 된다고 보장할 수 있음
 
-#### Task 4: 카드 조합 판정/비교
-- **Action**: `combinations.ts`에 싱글/페어/트리플/풀하우스/스트레이트/스트레이트 봄/포카드 봄 판정 함수와 두 조합 간 강도 비교(같은 타입만 비교 가능, 봄은 예외) 구현
-- **Validate**: 대표 조합별 판정 단위 테스트 + Phoenix/Dragon 특수 규칙 케이스
+#### Task 4~7: 카드/조합/상태전이/스코어링 TS 포팅
+- **Action**: 각각 `ai/tichu_env`의 대응 모듈을 포팅
+- **Validate**: Task 3 픽스처 전량 통과
 
-#### Task 5: 라운드 흐름 상태 머신
-- **Action**: `gameState.ts`에 불변 `GameState` 타입과 리듀서 작성: 딜링(8장 그랜드 티츄 콜 → 14장 전원 배분) → 카드 교환(3인 각 1장) → 턴 순환(패스/플레이/봄 인터럽트) → 라운드 종료 조건(1명 제외 전원 아웃 또는 전원 아웃) 판정
-- **Validate**: 시나리오 기반 단위 테스트(정상 라운드, 더블 아웃, 마지막 플레이어 원 투 카드 이관)
+#### Task 8: 관측/액션 인코딩 TS 포팅
+- **Action**: `encoding.ts`에 `OBS_DIM`/`ACTION_DIM`과 `encode_observation`/`encode_action`/`encode_legal_actions` 구현
+- **Validate**: Task 3 픽스처의 벡터 값과 **부동소수점 단위로 일치**(허용 오차 내)
 
-#### Task 6: 스코어링
-- **Action**: `scoring.ts`에 라운드 점수 계산(트릭 점수 카드 합산, 티츄/그랜드 티츄 성공·실패 ±100/±200, 더블 아웃 200점, 마지막 카드 상대팀 이관 규칙) 구현
-- **Validate**: PRD 표준 규칙 기준 점수 계산 단위 테스트
+#### Task 9: 사람 vs 사람 프로토콜 정의
+- **Action**: `protocol.ts`에 `JOIN_ROOM`, `START_GAME`, `CALL_TICHU`, `PLAY_CARDS`, `PASS`, `STATE_UPDATE`, `ERROR`, `RECONNECT` 정의. AI 좌석 관련 메시지는 넣지 않되, 주석으로 "혼합 방 지원 시 여기에 추가" 표시만 남김
+- **Validate**: 타입 컴파일 통과
 
-#### Task 7: 클라이언트-서버 프로토콜 정의
-- **Action**: `protocol.ts`에 메시지 타입 정의: `JOIN_ROOM`, `LEAVE_ROOM`, `START_GAME`, `CALL_GRAND_TICHU`, `CALL_TICHU`, `EXCHANGE_CARDS`, `PLAY_CARDS`, `PASS`, `STATE_UPDATE`(플레이어별로 자신의 손패만 노출되는 view), `ERROR`, `RECONNECT`
-- **Validate**: 타입 컴파일 통과, server/client 양쪽에서 import 가능한지 확인
+### Phase 2 — 사람 vs 사람 게임 서버 (`packages/server`)
+#### Task 10: 방(Room) 생명주기
+- **Action**: 방 코드 생성, 4석 좌석 배정(팀 자동 편성). AI 좌석 채우기는 MVP 범위 밖(주석으로 확장 지점 표시)
+- **Validate**: 방 생성 → 4명 입장 → 5번째 거부 통합 테스트
 
-### Phase 2 — 게임 서버 (`packages/server`)
-#### Task 8: 방(Room) 생명주기
-- **Action**: `room.ts`에 방 코드 생성(예: 6자 영숫자), 4석 좌석 배정(팀 자동 편성: 마주보는 좌석이 한 팀), 방 삭제(전원 퇴장 시) 구현
-- **Validate**: 통합 테스트로 방 생성 → 4명 입장 → 5번째 입장 거부 확인
+#### Task 11: 세션/재접속
+- **Action**: 재접속 토큰, 유예 시간 내 상태 재동기화
+- **Validate**: 강제 종료 후 재연결 통합 테스트
 
-#### Task 9: 세션/재접속
-- **Action**: `session.ts`에 연결별 재접속 토큰 발급, 연결 끊김 시 유예 시간(예: 60초) 동안 좌석 보존 후 봇 대체 없이 대기, 유예 시간 내 동일 토큰으로 재연결 시 상태 재동기화
-- **Validate**: WebSocket 연결 강제 종료 후 재연결 시 동일 손패/턴 상태 복원되는 통합 테스트
+#### Task 12: 게임 루프 연결
+- **Action**: 사람 액션 → `packages/shared` 리듀서 위임, 플레이어별 view로 마스킹해 브로드캐스트
+- **Validate**: 4인 모의 클라이언트 한 라운드 완주 통합 테스트
 
-#### Task 10: 게임 루프 연결
-- **Action**: `gameServer.ts`에서 클라이언트 액션 메시지를 `packages/shared`의 리듀서에 위임하고, 결과 상태를 각 플레이어 시점(view)으로 마스킹하여 브로드캐스트. 불법 액션은 상태 변경 없이 `ERROR` 응답
-- **Validate**: 통합 테스트로 4인 모의 클라이언트가 한 라운드를 끝까지 진행
+### Phase 3 — AI 대국(혼자 모드, 브라우저 로컬 추론) — **Phase 1 완료 직후 병행 가능**
+#### Task 13: ONNX export 파이프라인
+- **Action**: `ai/export/export_onnx.py`가 지정된 `checkpoint_*.pt`를 로드해 `TichuPolicyValueNet`에 채운 뒤, 입력(`obs`, `action_vectors` — 후보 개수는 동적 축), 출력(`action_logits`, `state_value`) 이름을 고정해 ONNX로 export. 이 입출력 계약은 M2 쪽에도 공유해 **네트워크 forward 시그니처를 바꿀 때는 이 스크립트도 같이 업데이트**하도록 함
+- **Validate**: `ai/tests/test_export_onnx.py`에서 동일 입력에 대해 PyTorch 원본과 ONNX 출력이 수치적으로 일치(parity test)
 
-### Phase 3 — 클라이언트 (`packages/client`)
-#### Task 11: 로비 화면
-- **Action**: 방 생성/방 코드 입력으로 입장 화면, 좌석 표시, 4명 모이면 방장이 게임 시작 버튼 활성화
-- **Validate**: 수동 확인 + 컴포넌트 단위 테스트(react-review 스킬 기준 반영)
+#### Task 14: 모델 바이트 경량 인코딩
+- **Action**: export된 `.onnx` 파일을 reversible 바이트 인코딩(예: 고정 키 XOR)으로 감싸 정적 다운로드로 바로 못 쓰게 함. 브라우저 쪽에서 fetch 후 역변환
+- **Validate**: 인코딩 → 디코딩 왕복 시 원본과 바이트 단위 동일
 
-#### Task 12: WebSocket 훅
-- **Action**: `useGameSocket.ts`에서 연결, 재연결 토큰 저장(localStorage), 프로토콜 메시지 송수신을 캡슐화한 훅 작성
-- **Validate**: 연결 끊김 시뮬레이션 테스트
+#### Task 15: 브라우저 모델 로딩 및 오프라인 캐싱
+- **Action**: `loadModel.ts`가 인코딩된 모델을 fetch → 디코딩 → onnxruntime-web 세션 생성. Cache Storage(Service Worker)로 캐싱하고, 체크포인트 iteration을 버전 키로 사용해 새 iteration 감지 시에만 재다운로드
+- **Validate**: 오프라인(네트워크 차단) 상태에서 두 번째 접속 시 캐시된 모델로 정상 로드되는 테스트
 
-#### Task 13: 게임 테이블 UI
-- **Action**: 손패 표시/선택, 제출/패스/티츄 콜 버튼, 현재 트릭, 팀 점수판, 턴 표시 렌더링
-- **Validate**: 수동 QA로 4개 브라우저 탭에서 한 판 완주
+#### Task 16: AI 의사결정 함수
+- **Action**: `decideAiMove.ts`는 (관측 벡터, 후보 액션 벡터들, ONNX 세션)만 입력받아 선택된 액션 인덱스를 반환하는 **순수 함수**로 작성 — 모델 로딩/브라우저 API에 의존하지 않게 분리(향후 `onnxruntime-node`로 서버에서도 재사용 가능하도록)
+- **Validate**: Task 3 픽스처의 알려진 상태에 대해 합법 액션 중 하나를 반환하는지 단위 테스트
 
-### Phase 4 — 통합 및 검증
-#### Task 14: E2E 전체 게임 플레이
-- **Action**: Playwright로 4개 브라우저 컨텍스트가 방 생성부터 라운드 종료(점수 반영)까지 자동 플레이하는 시나리오 작성
+#### Task 17: 혼자 모드 게임 루프
+- **Action**: `soloGame.ts`가 서버 없이 `packages/shared` 리듀서 + `decideAiMove`로 1인 vs AI 3자리 게임을 진행
+- **Validate**: 통합 테스트로 한 라운드 완주(네트워크 호출 없음을 확인)
+
+### Phase 4 — 클라이언트 UI (`packages/client`)
+#### Task 18: 로비 화면 (사람 vs 사람)
+- **Action**: 방 생성/입장, 좌석 표시
+- **Validate**: 수동 확인 + 컴포넌트 테스트
+
+#### Task 19: "AI와 연습하기" 진입점
+- **Action**: 별도 화면에서 `soloGame.ts` 기반 혼자 모드 시작, 최초 로드 시 모델 다운로드 진행률 표시
+- **Validate**: 수동 QA — 오프라인 전환 후에도 재플레이 가능 확인
+
+#### Task 20: 게임 테이블 UI
+- **Action**: 손패/트릭/액션 버튼/점수판 (사람 vs 사람, 혼자 모드 공용 컴포넌트)
+- **Validate**: 수동 QA
+
+### Phase 5 — 통합 및 검증
+#### Task 21: E2E
+- **Action**: `full-game.spec.ts`(사람 vs 사람 4탭), `solo-ai.spec.ts`(혼자 모드, 네트워크 오프라인 시뮬레이션 포함)
 - **Validate**: `pnpm exec playwright test` 통과
 
-#### Task 15: 커버리지 확인 및 문서화
-- **Action**: `packages/shared`, `packages/server` 커버리지 80%+ 확인, 루트 `CLAUDE.md` 초안 작성(스택/구조/실행 명령)
-- **Validate**: `pnpm -w test -- --coverage` 리포트 확인
+#### Task 22: 커버리지 확인 및 문서화
+- **Action**: `packages/shared`, `packages/server`, `packages/client` 커버리지 80%+, 루트 `CLAUDE.md`에 스택/구조/실행 명령 반영. "혼합 방 확장 지점"(Task 9의 protocol.ts 주석, Task 16의 순수 함수 분리)을 문서에 명시
+- **Validate**: 커버리지 리포트 확인
 
 ## Validation
 ```bash
+# TS 스택
 pnpm install
 pnpm -w typecheck
 pnpm -w lint
@@ -118,27 +151,33 @@ pnpm -w test -- --coverage
 pnpm --filter server dev &
 pnpm --filter client dev &
 pnpm exec playwright test
+
+# Python export 파이프라인 (컨테이너 내부)
+docker compose exec ai python -m export.export_onnx --checkpoint checkpoints/checkpoint_N.pt --out packages/client/public/models/policy.onnx.enc
+docker compose exec ai pytest ai/tests/test_export_onnx.py
 ```
 
 ## Risks
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| 실시간 멀티플레이어 동기화 복잡도 (PRD 명시 리스크) | Medium | 서버 권위적 상태 + 플레이어별 view 마스킹으로 단일 소스 유지, 상태 전이는 순수 함수로 격리해 테스트 용이성 확보 |
-| Tichu 규칙 엣지 케이스(봄 인터럽트, 마지막 카드 이관, 더블 아웃) 오구현 | High | Phase 1에서 시나리오 기반 단위 테스트를 규칙 확정 전 먼저 작성(TDD), 표준 규칙 문서 대조 |
-| WebSocket 연결 끊김/새로고침 시 게임 중단 | Medium | Task 9의 재접속 유예 로직으로 완화. 유예 시간 초과 처리(예: 자동 패스/게임 중단)는 Open Question으로 남김 — 이번 계획 범위에서는 유예 시간 내 재접속만 보장 |
-| 4인 미만일 때 게임 시작 불가로 인한 테스트/개발 마찰 | Low | 개발 편의를 위한 로컬 전용 "solo 4-tab 테스트 모드" 문서화(제품 기능 아님) |
-
-## Open Questions (이번 계획에서 결정하지 않음)
-- 재접속 유예 시간 초과 시 처리(자동 패스 vs 게임 종료)는 Milestone 1 범위에서 임시로 "게임 종료 후 방 유지"로 처리하고, 정교한 처리는 후속 이슈로 분리
-- 배포/호스팅 방식은 이번 계획에 포함하지 않음(PRD Open Question과 동일하게 미정) — 로컬 개발 환경 기준으로 계획
+| TS/Python 규칙+인코딩 구현이 엣지케이스에서 갈라짐 | High | Task 3 골든 픽스처(값 단위 비교)로 기계적 검증 |
+| M2가 네트워크 구조(obs/action dim, forward 시그니처)를 바꾸면 ONNX export가 깨짐 | Medium | export 계약을 명시적으로 문서화, parity 테스트를 M2 쪽 CI/체크포인트 저장 흐름에도 걸어두길 권장(향후 child 세션에서 조율) |
+| 저사양 기기에서 WASM 추론이 느릴 수 있음 | Low | 모델이 작은 MLP라 위험 낮음, 그래도 실기기 벤치마크 필요 |
+| 모델이 계속 갱신되는 동안 캐시 무효화 로직이 꼬임 | Medium | iteration 번호를 캐시 키에 명시적으로 포함, 모델 고정 후에는 사실상 정적 자산이 되어 리스크 소멸 |
+| 모델 가중치가 브라우저에 노출됨 | Accepted | 랭킹 없음, 사용자가 수용. 가벼운 바이트 인코딩으로 캐주얼 추출만 방지(진짜 보안 아님, 문서화된 트레이드오프) |
+| 실시간 사람 vs 사람 동기화 복잡도 (PRD 명시 리스크) | Medium | 서버 권위적 상태 + view 마스킹, 순수 함수 리듀서 |
+| WebSocket 연결 끊김/새로고침 시 게임 중단 (사람 vs 사람만 해당) | Medium | Task 11 재접속 유예 로직 |
+| 혼합 방(향후 과제) 설계 변경 시 Phase 3 구조를 다시 만들어야 할 위험 | Low | Task 16에서 AI 의사결정을 순수 함수로 분리해둬서, 서버 재사용 시 로딩/캐싱 계층만 새로 짜면 됨 |
 
 ## Acceptance
-- [ ] Phase 0~4 모든 태스크 완료
-- [ ] `pnpm -w test`, `pnpm -w typecheck`, `pnpm -w lint`, Playwright E2E 모두 통과
-- [ ] 규칙 엔진(`packages/shared`) 테스트 커버리지 80%+
-- [ ] 4개의 서로 다른 브라우저 탭에서 방 생성 → 입장 → 한 라운드 플레이 → 점수 반영까지 수동으로 재현 가능
-- [ ] 연결 끊김 후 유예 시간 내 재접속 시 게임 상태 복원 확인
-- [ ] 그린필드 첫 계획이므로 확립한 컨벤션(Naming/Error handling/Tests)이 실제 코드에 일관 적용됨
+- [ ] Phase 0~5 모든 태스크 완료
+- [ ] `pnpm -w test`, `pnpm -w typecheck`, `pnpm -w lint`, Playwright E2E(사람 vs 사람 + 혼자 모드) 모두 통과
+- [ ] `packages/shared`의 규칙+인코딩 테스트가 Python 골든 픽스처와 수치적으로 100% 일치
+- [ ] ONNX export가 PyTorch 원본과 parity 테스트 통과
+- [ ] 혼자 모드가 네트워크 차단 상태에서 재접속 없이 플레이 가능(오프라인 확인)
+- [ ] 학습 중인 체크포인트가 갱신되면 다음 방문 시 새 버전이 감지되어 재다운로드됨(수동 검증)
+- [ ] 사람 vs 사람 연결 끊김 후 유예 시간 내 재접속 시 상태 복원
+- [ ] 혼합 방 확장 지점(protocol.ts 주석, decideAiMove.ts 순수 함수 분리)이 문서화됨
 
 ---
-*Status: DRAFT PLAN — 코드 작성 전, 사용자 확인 대기 중.*
+*Status: 진행 중. Phase 0(모노레포 스캐폴드) + Phase 1(공유 규칙 엔진/인코딩/프로토콜, Task 1~9) 완료 — `packages/shared`의 규칙 엔진과 `encoding.ts`가 Python 골든 픽스처와 수치적으로 100% 일치함을 검증(세션: `2026-07-30-m1-web-shared-engine`). Phase 2(멀티플레이어 서버)~5(통합)는 각각 하위 세션(`tichu-multiplayer-server`, `tichu-solo-ai-browser`, `tichu-client-ui`, `tichu-e2e-integration`)에 위임 대기 중.*

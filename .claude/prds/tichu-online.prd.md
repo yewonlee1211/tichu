@@ -35,7 +35,7 @@ TBD — 공식 가설 없음. 개인 프로젝트로, 검증 목적이 아닌 �
 
 | # | Milestone | Outcome | Status | Plan |
 |---|---|---|---|---|
-| 1 | 사람 vs 사람 온라인 대전 | 두 명 이상의 사용자가 실시간으로 온라인에서 Tichu를 플레이할 수 있다 | pending | `.claude/plans/tichu-online.plan.md` (draft, 보류 — M2 이후 구조 재정렬 예정) |
+| 1 | 사람 vs 사람 온라인 대전 | 두 명 이상의 사용자가 실시간으로 온라인에서 Tichu를 플레이할 수 있다 | in-progress | `.claude/plans/tichu-online.plan.md` |
 | 2 | AI 대결 모드 | 사용자가 자체 개발 AI를 상대로 Tichu를 플레이할 수 있다 | in-progress | `.claude/plans/tichu-ai-selfplay.plan.md` |
 | 3 | 게임 로그 수집 | 모든 게임(사람 vs 사람, 사람 vs AI)의 플레이 로그가 저장되어 AI 학습 데이터로 활용 가능하다 | pending | — |
 
