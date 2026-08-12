@@ -11,6 +11,12 @@ venv/
 ai/checkpoints/
 ai/**/*.log
 ai/game_logs/
+ai/export/.env
+
+# AI model assets deployed to the client (regenerated via ai/export/export_onnx.py;
+# see ai/export/.env.example and packages/client/public/models/README.md)
+packages/client/public/models/*.onnx.enc
+packages/client/public/models/manifest.json
 
 # Node / web (future packages/)
 node_modules/

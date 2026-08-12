@@ -41,6 +41,8 @@ way the PyTorch model does.
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import tempfile
 from pathlib import Path
 
@@ -58,6 +60,8 @@ DYNAMIC_AXES = {
     "action_logits": {0: "num_candidates"},
 }
 OPSET_VERSION = 17
+
+CHECKPOINT_ITERATION_RE = re.compile(r"checkpoint_(\d+)\.pt$")
 
 
 class _OnnxExportWrapper(nn.Module):
@@ -124,16 +128,96 @@ def export_to_file(checkpoint_path: Path, out_path: Path) -> None:
     out_path.write_bytes(xor_transform(onnx_bytes))
 
 
+def infer_iteration(checkpoint_path: Path) -> int:
+    """Parses the training iteration out of a `checkpoint_<N>.pt` filename (see
+    `training/train.py`, which always names checkpoints this way). The browser-side
+    loader (`packages/client/src/ai/loadModel.ts`) compares this number against its
+    cached manifest to decide whether to redownload the model, so a wrong guess here
+    means a stale model silently never refreshes -- raise instead of guessing when the
+    filename doesn't follow the convention."""
+    match = CHECKPOINT_ITERATION_RE.search(checkpoint_path.name)
+    if match is None:
+        raise ValueError(
+            f"cannot infer iteration from checkpoint filename {checkpoint_path.name!r} "
+            "(expected checkpoint_<N>.pt); pass --iteration explicitly."
+        )
+    return int(match.group(1))
+
+
+def write_manifest(manifest_path: Path, iteration: int) -> None:
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps({"iteration": iteration}))
+
+
+DEFAULT_ENV_FILE = Path(__file__).parent / ".env"
+
+
+def load_env_file(path: Path) -> dict[str, str]:
+    """Parses a minimal `KEY=VALUE`-per-line env file (blank lines and `#` comments
+    ignored). Hand-rolled instead of adding a `python-dotenv` dependency for this
+    handful of flat string values. Lets `--checkpoint`/`--out` be pinned in a local,
+    gitignored file (see `.env.example`) instead of retyped on the command line every
+    time a different training run's checkpoint should ship -- CLI flags still take
+    precedence when passed explicitly. Missing file is not an error: an empty dict
+    just means no defaults were supplied this way."""
+    if not path.is_file():
+        return {}
+    env: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, sep, value = stripped.partition("=")
+        if not sep:
+            continue
+        env[key.strip()] = value.strip()
+    return env
+
+
 def _main() -> None:
     parser = argparse.ArgumentParser(
         description="Export a TichuPolicyValueNet checkpoint to an obfuscated ONNX model for the browser."
     )
-    parser.add_argument("--checkpoint", type=Path, required=True, help="checkpoint_*.pt file to export.")
-    parser.add_argument("--out", type=Path, required=True, help="Output path, e.g. policy.onnx.enc.")
+    parser.add_argument(
+        "--checkpoint", type=Path, default=None, help="checkpoint_*.pt file to export. Falls back to CHECKPOINT in --env-file."
+    )
+    parser.add_argument("--out", type=Path, default=None, help="Output path, e.g. policy.onnx.enc. Falls back to OUT in --env-file.")
+    parser.add_argument(
+        "--iteration",
+        type=int,
+        default=None,
+        help="Model iteration number recorded in manifest.json. Inferred from --checkpoint's "
+        "filename (checkpoint_<N>.pt) when omitted.",
+    )
+    parser.add_argument(
+        "--manifest-out",
+        type=Path,
+        default=None,
+        help="Output path for manifest.json. Defaults to manifest.json next to --out.",
+    )
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        default=DEFAULT_ENV_FILE,
+        help="KEY=VALUE file providing CHECKPOINT/OUT defaults (default: export/.env, gitignored -- see export/.env.example).",
+    )
     args = parser.parse_args()
 
-    export_to_file(args.checkpoint, args.out)
-    print(f"exported {args.checkpoint} -> {args.out}")
+    env = load_env_file(args.env_file)
+    checkpoint = args.checkpoint if args.checkpoint is not None else (Path(env["CHECKPOINT"]) if "CHECKPOINT" in env else None)
+    out = args.out if args.out is not None else (Path(env["OUT"]) if "OUT" in env else None)
+    if checkpoint is None:
+        parser.error(f"--checkpoint is required (or set CHECKPOINT in {args.env_file}).")
+    if out is None:
+        parser.error(f"--out is required (or set OUT in {args.env_file}).")
+
+    iteration = args.iteration if args.iteration is not None else infer_iteration(checkpoint)
+    manifest_out = args.manifest_out if args.manifest_out is not None else out.parent / "manifest.json"
+
+    export_to_file(checkpoint, out)
+    write_manifest(manifest_out, iteration)
+    print(f"exported {checkpoint} -> {out}")
+    print(f"wrote manifest (iteration={iteration}) -> {manifest_out}")
 
 
 if __name__ == "__main__":

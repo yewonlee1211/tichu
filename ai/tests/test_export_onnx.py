@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -6,7 +7,15 @@ import onnxruntime as ort
 import torch
 
 from agents.policy_network import TichuPolicyValueNet
-from export.export_onnx import INPUT_NAMES, OUTPUT_NAMES, export_to_file, load_network
+from export.export_onnx import (
+    INPUT_NAMES,
+    OUTPUT_NAMES,
+    export_to_file,
+    infer_iteration,
+    load_env_file,
+    load_network,
+    write_manifest,
+)
 from export.obfuscate import xor_transform
 from tichu_env.encoding import ACTION_DIM, OBS_DIM
 
@@ -46,6 +55,40 @@ def test_load_network_raises_for_a_missing_checkpoint_path(tmp_path: Path):
 def test_xor_transform_round_trips_arbitrary_bytes():
     data = bytes(range(256)) * 4
     assert xor_transform(xor_transform(data)) == data
+
+
+def test_infer_iteration_parses_the_number_out_of_a_conventional_checkpoint_filename(tmp_path: Path):
+    assert infer_iteration(tmp_path / "checkpoint_42.pt") == 42
+
+
+def test_infer_iteration_raises_for_a_filename_that_does_not_follow_the_convention(tmp_path: Path):
+    try:
+        infer_iteration(tmp_path / "best_model.pt")
+        assert False, "expected ValueError for a non-conventional checkpoint filename"
+    except ValueError:
+        pass
+
+
+def test_write_manifest_writes_the_iteration_as_json(tmp_path: Path):
+    manifest_path = tmp_path / "nested" / "manifest.json"
+
+    write_manifest(manifest_path, 7)
+
+    assert json.loads(manifest_path.read_text()) == {"iteration": 7}
+
+
+def test_load_env_file_parses_key_value_pairs_and_skips_blanks_and_comments(tmp_path: Path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("\n".join(["# comment", "", "CHECKPOINT=checkpoints/run1/checkpoint_300.pt", "OUT=deploy/client-models/policy.onnx.enc"]))
+
+    assert load_env_file(env_path) == {
+        "CHECKPOINT": "checkpoints/run1/checkpoint_300.pt",
+        "OUT": "deploy/client-models/policy.onnx.enc",
+    }
+
+
+def test_load_env_file_returns_empty_dict_when_the_file_does_not_exist(tmp_path: Path):
+    assert load_env_file(tmp_path / "missing.env") == {}
 
 
 def test_onnx_export_does_not_replicate_pytorchs_empty_action_set_guard(tmp_path: Path):

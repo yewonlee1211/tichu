@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./ai:/app
+      - ./packages/client/public/models:/app/deploy/client-models
     working_dir: /app
     tty: true
     stdin_open: true
