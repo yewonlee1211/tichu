@@ -15,8 +15,12 @@ import {
 } from '@tichu/shared';
 import { GameServer } from './gameServer';
 
+// Real production default is several seconds (see `DEFAULT_ROUND_OVER_DISPLAY_MS`
+// in gameServer.ts) so players actually see the round summary -- tests don't
+// render anything, so keep it near-zero to avoid every round-completing test
+// paying that wait.
 function startServer(gracePeriodMs?: number): GameServer {
-  return new GameServer({ port: 0, gracePeriodMs });
+  return new GameServer({ port: 0, gracePeriodMs, roundOverDisplayMs: 10 });
 }
 
 // A single persistent 'message' listener per socket, queueing anything that

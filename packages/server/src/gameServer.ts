@@ -37,7 +37,21 @@ interface GameRoom {
   /** [team(0,2) total, team(1,3) total] accumulated across the whole match,
    * updated each time a round ends (see `finishRoundAndDeal`). */
   cumulativeScores: readonly [number, number];
+  /** Set while the room is showing a just-finished round's RoundOver state
+   * and waiting to auto-deal the next one (see `ROUND_OVER_DISPLAY_MS`).
+   * Must be cleared with `clearTimeout` if the room is deleted first, so a
+   * stray timer never dials `dealNewRound`/broadcasts on a room nobody is
+   * tracking anymore. */
+  pendingNextRoundTimer: ReturnType<typeof setTimeout> | null;
 }
+
+/** Default for `GameServerOptions.roundOverDisplayMs` -- how long the
+ * RoundOver state stays up before the server auto-deals the next round.
+ * Without this, `applyAction` broadcast the RoundOver state and the next
+ * round back-to-back with no gap, so players never actually saw their
+ * round's summary/scores -- React batched straight through the intermediate
+ * render. */
+const DEFAULT_ROUND_OVER_DISPLAY_MS = 4000;
 
 interface ConnectionContext {
   readonly reconnectToken: string;
@@ -48,6 +62,9 @@ interface ConnectionContext {
 export interface GameServerOptions {
   readonly port?: number;
   readonly gracePeriodMs?: number;
+  /** Overrides `DEFAULT_ROUND_OVER_DISPLAY_MS`; tests pass ~0 to avoid a
+   * multi-second wait for a deterministic assertion. */
+  readonly roundOverDisplayMs?: number;
 }
 
 export class GameServer {
@@ -58,8 +75,10 @@ export class GameServer {
    * are removed on disconnect and restored on a successful RECONNECT. */
   private readonly sockets = new Map<string, Map<number, WebSocket>>();
   private readonly connections = new Map<WebSocket, string>();
+  private readonly roundOverDisplayMs: number;
 
   constructor(options: GameServerOptions = {}) {
+    this.roundOverDisplayMs = options.roundOverDisplayMs ?? DEFAULT_ROUND_OVER_DISPLAY_MS;
     this.sessions = new SessionRegistry({
       gracePeriodMs: options.gracePeriodMs,
       onExpire: (session) => this.handleSessionExpired(session),
@@ -137,7 +156,13 @@ export class GameServer {
       do {
         roomCode = generateRoomCode();
       } while (this.rooms.has(roomCode));
-      gameRoom = { room: createRoom(roomCode), state: null, pendingGifts: {}, cumulativeScores: [0, 0] };
+      gameRoom = {
+        room: createRoom(roomCode),
+        state: null,
+        pendingGifts: {},
+        cumulativeScores: [0, 0],
+        pendingNextRoundTimer: null,
+      };
       this.rooms.set(roomCode, gameRoom);
       logOperational('room_created', { roomCode });
     } else {
@@ -253,7 +278,8 @@ export class GameServer {
     // Score into the room's running total and broadcast the ROUND_OVER state
     // first (so clients see the round summary with the now-updated
     // cumulative scores), then -- unless the match is now won -- deal and
-    // broadcast the next round right away. Mirrors `SoloGame.finishRoundAndDeal()`,
+    // broadcast the next round after `ROUND_OVER_DISPLAY_MS` so players
+    // actually get to see the summary. Mirrors `SoloGame.finishRoundAndDeal()`,
     // except automatic rather than waiting for a manual "next round" click,
     // since there's no single client authorized to trigger it for the whole room.
     this.scoreRoundIntoRoom(gameRoom, context.roomCode);
@@ -262,9 +288,12 @@ export class GameServer {
       logGameEvent('match_over', { roomCode: context.roomCode, cumulativeScores: gameRoom.cumulativeScores });
       return;
     }
-    gameRoom.state = dealNewRound();
-    logGameEvent('round_started', { roomCode: context.roomCode });
-    this.broadcastState(gameRoom);
+    gameRoom.pendingNextRoundTimer = setTimeout(() => {
+      gameRoom.pendingNextRoundTimer = null;
+      gameRoom.state = dealNewRound();
+      logGameEvent('round_started', { roomCode: context.roomCode });
+      this.broadcastState(gameRoom);
+    }, this.roundOverDisplayMs);
   }
 
   /** Mutates `gameRoom.cumulativeScores` by scoring the just-finished round
@@ -319,6 +348,7 @@ export class GameServer {
     const remaining = leaveRoom(gameRoom.room, session.seat);
     logOperational('seat_forfeited', { roomCode: session.roomCode, seat: session.seat });
     if (remaining === null) {
+      if (gameRoom.pendingNextRoundTimer !== null) clearTimeout(gameRoom.pendingNextRoundTimer);
       this.rooms.delete(session.roomCode);
       this.sockets.delete(session.roomCode);
       logOperational('room_deleted', { roomCode: session.roomCode });
