@@ -38,7 +38,7 @@ Every `.claude/worklog/...` or `.claude/.locks/...` path mentioned anywhere in t
 ## Steps
 
 1. **Gather the four inputs above.**
-2. **Check for file overlap with other active sessions.** For every row in `.claude/worklog/sessions-summary.md` with 상태 = 진행중, open its `sessions/<slug>.md` and compare its `관련 파일` entries against the new session's. Treat it as an overlap when paths are identical, or one is a directory containing the other (e.g. `ai/eval/` vs `ai/eval/train.py`). This is a **warning, not a block** — broad directory-level overlap is often fine. If any overlap is found, tell the user which session(s) and files overlap and ask whether to proceed anyway; don't silently continue or silently abort.
+2. **Check for file overlap with other active sessions.** `sessions-summary.md` carries a `관련 파일` column that mirrors each session file's own `## 관련 파일` section — compare the new session's files against that column directly, for every row with 상태 = 진행중, **without opening any `sessions/<slug>.md` files**. Treat it as an overlap when paths are identical, or one is a directory containing the other (e.g. `ai/eval/` vs `ai/eval/train.py`). This is a **warning, not a block** — broad directory-level overlap is often fine. If any overlap is found, tell the user which session(s) and files overlap and ask whether to proceed anyway; don't silently continue or silently abort. Only open the actual session file as a fallback if its index cell looks empty/stale and the potential overlap genuinely needs disambiguating.
 3. **Propose a slug.** Format: `YYYY-MM-DD-<kebab-case-short-desc>`, derived from the 목적. Offer 2-3 candidates and let the user pick or edit one. Don't finalize without approval.
 4. **Ask whether this session gets its own git worktree.** Isolation via worktree is what makes [worktree-merge](../worktree-merge/SKILL.md) usable later, and it's the recommended default for any session that will edit source files another concurrent session might also touch — but it's still a yes/no ask, not automatic, since quick/doc-only/exploratory sessions don't need it.
    - If the user declines, skip to step 5 with no worktree — this session works directly in the current (already checked-out) worktree, same as today.
@@ -95,7 +95,7 @@ Every `.claude/worklog/...` or `.claude/.locks/...` path mentioned anywhere in t
    (없음)
    ```
 
-6. **Add a row to the index** `.claude/worklog/sessions-summary.md`: `| <slug> | <목적 한 줄> | <상위 slug 또는 빈칸> | 진행중 |`.
+6. **Add a row to the index** `.claude/worklog/sessions-summary.md`: `| <slug> | <목적 한 줄> | <관련 파일, semicolon-separated, same condensed form as the other rows> | <상위 slug 또는 빈칸> | 진행중 |`.
 7. **Remember the slug for the rest of this conversation.** Do not write a separate pointer file — `/work-summary` and `commit-checkpoint`'s logging step rely on this conversation already knowing its own registered slug from having run this skill. If asked to register a session again later in the same conversation (e.g. the goal genuinely changed), treat it as a new registration and update what "the current slug" means from that point on.
 8. **Confirm to the user**: show the created file path and the index row, mention the overlap check result from step 2 (even if "no overlap found"), and if a worktree was created, restate its path so the user knows where to open their next window.
 
