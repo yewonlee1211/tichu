@@ -25,6 +25,19 @@ export interface CallTichuMessage {
   readonly type: 'CALL_TICHU';
 }
 
+export interface DecideGrandTichuMessage {
+  readonly type: 'DECIDE_GRAND_TICHU';
+  readonly called: boolean;
+}
+
+/** Key = seat of the recipient (the other three seats, never the sender's
+ * own). The server collects one of these from all four players before
+ * merging them into a single `Gifts` object and calling `exchangeCards`. */
+export interface ExchangeCardsMessage {
+  readonly type: 'EXCHANGE_CARDS';
+  readonly gifts: Readonly<Record<number, Card>>;
+}
+
 export interface PlayCardsMessage {
   readonly type: 'PLAY_CARDS';
   readonly cards: readonly Card[];
@@ -46,6 +59,8 @@ export type ClientMessage =
   | JoinRoomMessage
   | StartGameMessage
   | CallTichuMessage
+  | DecideGrandTichuMessage
+  | ExchangeCardsMessage
   | PlayCardsMessage
   | PassMessage
   | ReconnectMessage;
@@ -81,11 +96,24 @@ export interface StateUpdateMessage {
   readonly view: PlayerView;
 }
 
+/** Sent once to a connection right after JOIN_ROOM or RECONNECT succeeds --
+ * neither had any success acknowledgment otherwise, leaving a room's own
+ * creator with no way to learn the code the server just generated for it,
+ * and no seat/reconnectToken for any joiner to hold onto. Not part of Task
+ * 9's original 8 messages; added here because Tasks 10-11 (room codes,
+ * reconnect tokens) are unusable without a reply carrying this data back. */
+export interface RoomJoinedMessage {
+  readonly type: 'ROOM_JOINED';
+  readonly roomCode: string;
+  readonly seat: number;
+  readonly reconnectToken: string;
+}
+
 export interface ErrorMessage {
   readonly type: 'ERROR';
   readonly message: string;
 }
 
-export type ServerMessage = StateUpdateMessage | ErrorMessage;
+export type ServerMessage = RoomJoinedMessage | StateUpdateMessage | ErrorMessage;
 
 export type ProtocolMessage = ClientMessage | ServerMessage;
