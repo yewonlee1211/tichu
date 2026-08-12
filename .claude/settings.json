@@ -39,6 +39,16 @@
           }
         ],
         "description": "Block ls/dir/gci/Get-ChildItem/cat/type/gc/Get-Content/find in favor of Glob, Grep, and Read"
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);if(i.agent_type){process.exit(0)}const fp=(i.tool_input&&i.tool_input.file_path)||'';if(!fp){process.exit(0)}const THRESHOLD=900;const DEFAULT_LIMIT=2000;const limit=i.tool_input.limit;if(limit&&limit<=THRESHOLD){process.exit(0)}const fs=require('fs');let total;try{total=fs.readFileSync(fp,'utf8').split('\\n').length}catch(e){process.exit(0)}const offset=i.tool_input.offset||0;const effLimit=limit||DEFAULT_LIMIT;const linesToRead=Math.max(0,Math.min(effLimit,total-offset));if(linesToRead>THRESHOLD){console.error('[Hook] 메인 스레드에서 약 '+linesToRead+'줄을 offset/limit 없이 한 번에 Read하려 합니다 (기준 '+THRESHOLD+'줄). Grep이나 offset/limit으로 좁혀서 읽거나, 정확성 때문에 전체를 봐야 한다면 이 파일을 서브에이전트(Agent 도구: Explore/general-purpose)에 위임해 그 안에서 전체를 읽고 요약·명세만 돌려받으세요. (서브에이전트 내부의 Read는 이 훅의 적용을 받지 않습니다.)');process.exit(2)}process.exit(0)}catch(e){process.exit(0)}})\""
+          }
+        ],
+        "description": "Hard-block main-thread Read calls that would return >900 lines without offset/limit; subagent Read calls (agent_type present) are exempt so full-file delegation still works"
       }
     ],
     "PostToolUse": [
@@ -51,6 +61,16 @@
           }
         ],
         "description": "Suggest a commit checkpoint when a TodoWrite update marks every task completed and the tree is dirty"
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const i=JSON.parse(d);if(i.agent_type){process.exit(0)}const fp=(i.tool_input&&i.tool_input.file_path)||'';if(!fp){process.exit(0)}const fs=require('fs');const os=require('os');const path=require('path');const WINDOW_MS=90000;const FILE_THRESHOLD=4;const LINE_THRESHOLD=1500;const DEFAULT_LIMIT=2000;let total;try{total=fs.readFileSync(fp,'utf8').split('\\n').length}catch(e){process.exit(0)}const offset=i.tool_input.offset||0;const limit=i.tool_input.limit||DEFAULT_LIMIT;const linesRead=Math.max(0,Math.min(limit,total-offset));const stateFile=path.join(os.tmpdir(),'claude-read-window-'+(i.session_id||'default')+'.json');let state=[];try{state=JSON.parse(fs.readFileSync(stateFile,'utf8'))}catch(e){state=[]}const now=Date.now();state=state.filter(x=>now-x.t<WINDOW_MS);state.push({t:now,f:fp,l:linesRead});fs.writeFileSync(stateFile,JSON.stringify(state));const distinctFiles=new Set(state.map(x=>x.f)).size;const totalLines=state.reduce((s,x)=>s+x.l,0);if(distinctFiles>=FILE_THRESHOLD||totalLines>=LINE_THRESHOLD){const msg='[Hook] 최근 '+Math.round(WINDOW_MS/1000)+'초 동안 메인 스레드에서 파일 '+distinctFiles+'개, 약 '+totalLines+'줄을 연속으로 Read했습니다. 남은 대규모 읽기는 서브에이전트(Explore/general-purpose)에 위임하는 걸 고려하세요.';console.log(JSON.stringify({systemMessage:msg,hookSpecificOutput:{hookEventName:'PostToolUse',additionalContext:msg}}))}process.exit(0)}catch(e){process.exit(0)}})\""
+          }
+        ],
+        "description": "Non-blocking nudge: warns when >=4 files or >=1500 cumulative lines were Read within a 90s rolling window on the main thread; subagent reads are exempt"
       }
     ]
   }
