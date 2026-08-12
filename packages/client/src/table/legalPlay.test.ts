@@ -30,6 +30,7 @@ function baseView(overrides: Partial<PlayerView>): PlayerView {
     tichuCalls: [false, false, false, false],
     largeTichuCalls: [null, null, null, null],
     mahjongWish: null,
+    cumulativeScores: [0, 0],
     ...overrides,
   };
 }

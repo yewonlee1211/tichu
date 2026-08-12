@@ -2,8 +2,10 @@ import { Scoreboard, type ScoreboardProps } from './Scoreboard';
 
 export interface RoundOverSummaryProps extends ScoreboardProps {
   /** Solo mode only: lets the player deal the next round, or is omitted once
-   * the match itself has ended (`SoloGame.isMatchOver()`). Multiplayer has
-   * no next-round flow yet (see the client-ui session log). */
+   * the match itself has ended (`SoloGame.isMatchOver()`). Multiplayer deals
+   * the next round automatically server-side (`gameServer.ts`'s `applyAction`),
+   * so it never passes this -- there is no single client authorized to
+   * trigger it for the whole room. */
   readonly onNextRound?: () => void;
   readonly matchOver?: boolean;
 }

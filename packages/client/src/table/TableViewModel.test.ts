@@ -21,6 +21,7 @@ describe('fromPlayerView', () => {
       tichuCalls: [false, false, false, false],
       largeTichuCalls: [null, null, null, null],
       mahjongWish: null,
+      cumulativeScores: [0, 0],
     };
 
     const vm = fromPlayerView(view);
@@ -47,6 +48,7 @@ describe('fromPlayerView', () => {
       tichuCalls: [false, false, false, false],
       largeTichuCalls: [null, null, null, null],
       mahjongWish: null,
+      cumulativeScores: [0, 0],
     };
 
     const vm = fromPlayerView(view, ['Alice', 'Bob', 'Carol', 'Dave']);

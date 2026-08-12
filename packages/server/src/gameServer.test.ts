@@ -296,6 +296,94 @@ describe('GameServer', () => {
     expect(views.get(0)!.finishedOrder.length).toBeGreaterThanOrEqual(2);
   }, 20_000);
 
+  it('scores a finished round into cumulativeScores and automatically deals the next round', async () => {
+    const server = startServer();
+    servers.push(server);
+    const { players } = await joinFourPlayers(server);
+    sockets.push(...players.map((p) => p.ws));
+
+    const views = new Map<number, PlayerView>();
+
+    async function sendActionAndCollect(actor: Player, action: ClientMessage): Promise<void> {
+      send(actor.ws, action);
+      const first = await nextMessage(actor.ws);
+      if (first.type === 'ERROR') {
+        throw new Error(`action ${JSON.stringify(action)} from seat ${actor.seat} was rejected: ${first.message}`);
+      }
+      if (first.type !== 'STATE_UPDATE') throw new Error(`expected STATE_UPDATE, got ${first.type}`);
+      views.set(first.view.viewerSeat, first.view);
+
+      const others = players.filter((p) => p !== actor);
+      const rest = await Promise.all(others.map((p) => nextMessage(p.ws)));
+      for (const message of rest) {
+        if (message.type !== 'STATE_UPDATE') throw new Error(`expected STATE_UPDATE, got ${message.type}`);
+        views.set(message.view.viewerSeat, message.view);
+      }
+    }
+
+    async function broadcastAndCollect(): Promise<void> {
+      const messages = await Promise.all(players.map((p) => nextMessage(p.ws)));
+      for (const message of messages) {
+        if (message.type !== 'STATE_UPDATE') throw new Error(`expected STATE_UPDATE, got ${message.type}`);
+        views.set(message.view.viewerSeat, message.view);
+      }
+    }
+
+    send(players[0]!.ws, { type: 'START_GAME' });
+    await broadcastAndCollect();
+    for (const seat of [0, 1, 2, 3]) {
+      expect(views.get(seat)?.cumulativeScores).toEqual([0, 0]);
+    }
+
+    for (const player of players) {
+      await sendActionAndCollect(player, { type: 'DECIDE_GRAND_TICHU', called: false });
+    }
+
+    for (const player of players) {
+      const hand = views.get(player.seat)!.hand;
+      const others = [0, 1, 2, 3].filter((s) => s !== player.seat);
+      const gifts: Record<number, Card> = {};
+      others.forEach((seat, i) => {
+        gifts[seat] = hand[i]!;
+      });
+      if (player === players[players.length - 1]) {
+        await sendActionAndCollect(player, { type: 'EXCHANGE_CARDS', gifts });
+      } else {
+        send(player.ws, { type: 'EXCHANGE_CARDS', gifts });
+      }
+    }
+
+    const maxTurns = 300;
+    let turns = 0;
+    while (views.get(0)!.phase !== Phase.RoundOver) {
+      turns += 1;
+      if (turns > maxTurns) throw new Error(`round did not finish within ${maxTurns} turns`);
+
+      const actingSeat = views.get(0)!.currentPlayer;
+      const actor = players.find((p) => p.seat === actingSeat)!;
+      const action = chooseAction(views.get(actingSeat)!);
+      await sendActionAndCollect(actor, action);
+    }
+
+    // The ROUND_OVER broadcast (from the winning play/pass itself) already
+    // carries the updated cumulative score -- no separate action needed.
+    const [team0AfterRound, team1AfterRound] = views.get(0)!.cumulativeScores;
+    expect(team0AfterRound !== 0 || team1AfterRound !== 0).toBe(true);
+    for (const seat of [1, 2, 3]) {
+      expect(views.get(seat)?.cumulativeScores).toEqual([team0AfterRound, team1AfterRound]);
+    }
+
+    // The server deals and broadcasts the next round automatically -- no
+    // client sends anything here, just read the message each socket already
+    // has queued from the server's second broadcast.
+    await broadcastAndCollect();
+    for (const seat of [0, 1, 2, 3]) {
+      expect(views.get(seat)?.phase).toBe(Phase.LargeTichu);
+      expect(views.get(seat)?.finishedOrder).toEqual([]);
+      expect(views.get(seat)?.cumulativeScores).toEqual([team0AfterRound, team1AfterRound]);
+    }
+  }, 20_000);
+
   it('rejects JOIN_ROOM for a room code that does not exist', async () => {
     const server = startServer();
     servers.push(server);

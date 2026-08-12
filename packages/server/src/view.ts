@@ -4,7 +4,11 @@ import { type GameState, type PlayerView, pointValue } from '@tichu/shared';
  * hand in full, everyone else only as hand sizes and collected-point
  * totals. Mirrors the public/private split `encoding.ts` already
  * established for the AI's observation vector. */
-export function buildPlayerView(state: GameState, viewerSeat: number): PlayerView {
+export function buildPlayerView(
+  state: GameState,
+  viewerSeat: number,
+  cumulativeScores: readonly [number, number],
+): PlayerView {
   return {
     viewerSeat,
     hand: state.hands[viewerSeat]!,
@@ -21,5 +25,6 @@ export function buildPlayerView(state: GameState, viewerSeat: number): PlayerVie
     tichuCalls: state.tichuCalls,
     largeTichuCalls: state.largeTichuCalls,
     mahjongWish: state.mahjongWish,
+    cumulativeScores,
   };
 }

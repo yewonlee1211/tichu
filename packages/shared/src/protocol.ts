@@ -89,6 +89,9 @@ export interface PlayerView {
   readonly tichuCalls: readonly boolean[];
   readonly largeTichuCalls: readonly (boolean | null)[];
   readonly mahjongWish: Rank | null;
+  /** [team(0,2) total, team(1,3) total] accumulated across the match so far,
+   * not including the currently in-progress round. */
+  readonly cumulativeScores: readonly [number, number];
 }
 
 export interface StateUpdateMessage {

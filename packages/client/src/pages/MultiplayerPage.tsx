@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Phase } from '@tichu/shared';
+import { Phase, isGameOver } from '@tichu/shared';
 import { useGameSocket } from '../ws/useGameSocket';
 import { fromPlayerView } from '../table/TableViewModel';
 import { legalCombosForView } from '../table/legalPlay';
@@ -82,6 +82,8 @@ export function MultiplayerPage({ wsUrl, onExit }: MultiplayerPageProps) {
         busy={socket.status !== 'open'}
         errorMessage={socket.error}
         exchangeSubmitted={exchangeSubmitted}
+        cumulativeScores={socket.view.cumulativeScores}
+        matchOver={isGameOver(socket.view.cumulativeScores)}
         onDecideGrandTichu={socket.decideGrandTichu}
         onSubmitExchange={(gifts) => {
           setExchangeSubmitted(true);

@@ -8,8 +8,10 @@ import {
   dealNewRound,
   decideLargeTichu,
   exchangeCards,
+  isGameOver,
   passTurn,
   playCombo,
+  scoreRound,
   type Card,
   type ClientMessage,
   type ErrorMessage,
@@ -32,6 +34,9 @@ interface GameRoom {
    * -- a failed merge means at least one submission was invalid, so all
    * four re-submit rather than leaving stale gifts half-applied). */
   pendingGifts: Partial<Record<number, Record<number, Card>>>;
+  /** [team(0,2) total, team(1,3) total] accumulated across the whole match,
+   * updated each time a round ends (see `finishRoundAndDeal`). */
+  cumulativeScores: readonly [number, number];
 }
 
 interface ConnectionContext {
@@ -132,7 +137,7 @@ export class GameServer {
       do {
         roomCode = generateRoomCode();
       } while (this.rooms.has(roomCode));
-      gameRoom = { room: createRoom(roomCode), state: null, pendingGifts: {} };
+      gameRoom = { room: createRoom(roomCode), state: null, pendingGifts: {}, cumulativeScores: [0, 0] };
       this.rooms.set(roomCode, gameRoom);
       logOperational('room_created', { roomCode });
     } else {
@@ -239,7 +244,42 @@ export class GameServer {
     }
     gameRoom.state = result.value;
     logGameEvent('state_transition', { roomCode: context.roomCode, seat: context.seat, phase: result.value.phase });
+
+    if (gameRoom.state.phase !== Phase.RoundOver) {
+      this.broadcastState(gameRoom);
+      return;
+    }
+
+    // Score into the room's running total and broadcast the ROUND_OVER state
+    // first (so clients see the round summary with the now-updated
+    // cumulative scores), then -- unless the match is now won -- deal and
+    // broadcast the next round right away. Mirrors `SoloGame.finishRoundAndDeal()`,
+    // except automatic rather than waiting for a manual "next round" click,
+    // since there's no single client authorized to trigger it for the whole room.
+    this.scoreRoundIntoRoom(gameRoom, context.roomCode);
     this.broadcastState(gameRoom);
+    if (isGameOver(gameRoom.cumulativeScores)) {
+      logGameEvent('match_over', { roomCode: context.roomCode, cumulativeScores: gameRoom.cumulativeScores });
+      return;
+    }
+    gameRoom.state = dealNewRound();
+    logGameEvent('round_started', { roomCode: context.roomCode });
+    this.broadcastState(gameRoom);
+  }
+
+  /** Mutates `gameRoom.cumulativeScores` by scoring the just-finished round
+   * (`gameRoom.state.phase` must already be `Phase.RoundOver`). Does not
+   * touch `gameRoom.state` or broadcast -- the caller handles both. */
+  private scoreRoundIntoRoom(gameRoom: GameRoom, roomCode: string): void {
+    const roundScore = scoreRound(gameRoom.state!);
+    if (!roundScore.ok) {
+      throw new Error(`scoreRoundIntoRoom invariant violated: ${roundScore.error}`);
+    }
+    gameRoom.cumulativeScores = [
+      gameRoom.cumulativeScores[0] + roundScore.value[0],
+      gameRoom.cumulativeScores[1] + roundScore.value[1],
+    ];
+    logGameEvent('round_scored', { roomCode, cumulativeScores: gameRoom.cumulativeScores });
   }
 
   private handleReconnect(ws: WebSocket, reconnectToken: string): void {
@@ -316,7 +356,10 @@ export class GameServer {
 
   private sendState(ws: WebSocket, gameRoom: GameRoom, seat: number): void {
     if (gameRoom.state === null) return;
-    const payload: StateUpdateMessage = { type: 'STATE_UPDATE', view: buildPlayerView(gameRoom.state, seat) };
+    const payload: StateUpdateMessage = {
+      type: 'STATE_UPDATE',
+      view: buildPlayerView(gameRoom.state, seat, gameRoom.cumulativeScores),
+    };
     this.send(ws, payload);
   }
 

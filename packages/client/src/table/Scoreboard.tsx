@@ -7,10 +7,10 @@ export interface ScoreboardProps {
   readonly currentPlayer: number;
   readonly viewerSeat: number;
   readonly finishedOrder: readonly number[];
-  /** [team(0,2) total, team(1,3) total] -- only known in solo mode, where the
-   * whole match's cumulative score is tracked client-side. Multiplayer has
-   * no equivalent broadcast (see the client-ui session log), so this stays
-   * undefined there and the team-totals row is simply omitted. */
+  /** [team(0,2) total, team(1,3) total]. Solo mode tracks this client-side
+   * (`SoloGame.getCumulativeScores()`); multiplayer gets it from the server's
+   * `PlayerView.cumulativeScores`. Optional only so callers without either
+   * source (e.g. isolated component tests) can omit the team-totals row. */
   readonly cumulativeScores?: readonly [number, number];
 }
 

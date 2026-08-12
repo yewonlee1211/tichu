@@ -49,6 +49,7 @@ describe('MultiplayerPage', () => {
         tichuCalls: [false, false, false, false],
         largeTichuCalls: [null, null, null, null],
         mahjongWish: null,
+        cumulativeScores: [0, 0],
       },
     });
 
