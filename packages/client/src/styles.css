@@ -1,0 +1,292 @@
+:root {
+  --color-felt-dark: #0b3d2e;
+  --color-felt: #12513d;
+  --color-felt-light: #1a6b4f;
+  --color-surface: #0e2a22;
+  --color-surface-raised: #143a2f;
+  --color-gold: #d4af37;
+  --color-gold-bright: #f2cf5b;
+  --color-ink: #f4f1e8;
+  --color-ink-dim: #b9c9c1;
+  --color-card-bg: #fbf8f0;
+  --color-card-ink: #1c1c1c;
+  --color-suit-sword: #2b2b2b;
+  --color-suit-pagoda: #1f5fa8;
+  --color-suit-jade: #1f7a3d;
+  --color-suit-star: #b3232f;
+  --color-danger: #e05d5d;
+
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --shadow-card: 0 2px 4px rgba(0, 0, 0, 0.35);
+  --shadow-panel: 0 6px 20px rgba(0, 0, 0, 0.4);
+
+  --font-display: Georgia, 'Nanum Myeongjo', serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  background: radial-gradient(ellipse at top, var(--color-felt-light), var(--color-felt-dark) 70%);
+  min-height: 100vh;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(1rem, 2vw, 2.5rem);
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+  color: var(--color-gold-bright);
+  letter-spacing: 0.02em;
+  margin: 0 0 0.75rem;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--color-gold);
+  background: linear-gradient(180deg, var(--color-felt-light), var(--color-felt));
+  color: var(--color-ink);
+  border-radius: 999px;
+  padding: 0.55rem 1.25rem;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.35);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+input,
+select {
+  font: inherit;
+  background: var(--color-surface-raised);
+  color: var(--color-ink);
+  border: 1px solid var(--color-felt-light);
+  border-radius: var(--radius-md);
+  padding: 0.4rem 0.6rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+/* ---- shared surfaces ---- */
+
+.home,
+.join-form,
+.waiting-room,
+.solo-entry,
+.phase-prompt,
+.scoreboard,
+.trick {
+  background: var(--color-surface);
+  border: 1px solid var(--color-felt-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+  width: min(100%, 32rem);
+}
+
+.home {
+  text-align: center;
+}
+
+.home__options {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.game-table,
+.multiplayer-page,
+.solo-game-page {
+  width: min(100%, 40rem);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.game-table__error,
+.join-form__error,
+.waiting-room__error {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+/* ---- cards ---- */
+
+.hand {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0;
+  margin: 0.75rem 0;
+}
+
+.hand--preview {
+  pointer-events: none;
+}
+
+.card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  height: 3.75rem;
+  padding: 0 0.35rem;
+  background: var(--color-card-bg);
+  color: var(--color-card-ink);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.card--mini {
+  height: 2.75rem;
+  min-width: 2.25rem;
+  font-size: 0.85rem;
+}
+
+button.card {
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+button.card:hover:not(:disabled) {
+  transform: translateY(-4px);
+}
+
+.card--selected {
+  outline: 3px solid var(--color-gold);
+  transform: translateY(-6px);
+}
+
+.card--suit-sword {
+  color: var(--color-suit-sword);
+}
+
+.card--suit-pagoda {
+  color: var(--color-suit-pagoda);
+}
+
+.card--suit-jade {
+  color: var(--color-suit-jade);
+}
+
+.card--suit-star {
+  color: var(--color-suit-star);
+}
+
+.card--suit-special {
+  color: var(--color-gold-bright);
+  background: var(--color-surface-raised);
+}
+
+/* ---- trick / scoreboard ---- */
+
+.trick__cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-height: 2.75rem;
+}
+
+.trick__turn--mine {
+  color: var(--color-gold-bright);
+  font-weight: 700;
+}
+
+.scoreboard table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.scoreboard th,
+.scoreboard td {
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--color-felt-light);
+}
+
+.scoreboard__row--active {
+  background: rgba(212, 175, 55, 0.15);
+}
+
+.scoreboard__totals {
+  margin-top: 0.75rem;
+  color: var(--color-gold-bright);
+}
+
+/* ---- exchange / pickers ---- */
+
+.exchange__slots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.flow-picker {
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  margin-top: 0.75rem;
+}
+
+.flow-picker__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.game-table__actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.solo-entry__progress progress {
+  width: 100%;
+  height: 0.9rem;
+  accent-color: var(--color-gold);
+}

@@ -17,6 +17,8 @@ node_modules/
 dist/
 build/
 coverage/
+.env.local
+.env.*.local
 
 # Editor / OS
 .vscode/
