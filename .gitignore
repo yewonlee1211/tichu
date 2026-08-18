@@ -26,6 +26,11 @@ coverage/
 .env.local
 .env.*.local
 
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+
 # Editor / OS
 .vscode/
 .idea/
