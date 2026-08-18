@@ -1,15 +1,18 @@
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import onnx
 import onnxruntime as ort
+import pytest
 import torch
 
 from agents.policy_network import TichuPolicyValueNet
 from export.export_onnx import (
     INPUT_NAMES,
     OUTPUT_NAMES,
+    _main,
     export_to_file,
     infer_iteration,
     load_env_file,
@@ -89,6 +92,43 @@ def test_load_env_file_parses_key_value_pairs_and_skips_blanks_and_comments(tmp_
 
 def test_load_env_file_returns_empty_dict_when_the_file_does_not_exist(tmp_path: Path):
     assert load_env_file(tmp_path / "missing.env") == {}
+
+
+def test_main_exports_using_explicit_cli_checkpoint_and_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    net = TichuPolicyValueNet()
+    checkpoint_path = tmp_path / "checkpoint_5.pt"
+    _save_checkpoint(net, checkpoint_path)
+    out_path = tmp_path / "policy.onnx.enc"
+
+    monkeypatch.setattr(sys, "argv", ["export_onnx.py", "--checkpoint", str(checkpoint_path), "--out", str(out_path)])
+    _main()
+
+    assert out_path.is_file()
+    manifest_path = out_path.parent / "manifest.json"
+    assert json.loads(manifest_path.read_text()) == {"iteration": 5}
+
+
+def test_main_falls_back_to_env_file_for_checkpoint_and_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    net = TichuPolicyValueNet()
+    checkpoint_path = tmp_path / "checkpoint_9.pt"
+    _save_checkpoint(net, checkpoint_path)
+    out_path = tmp_path / "deploy" / "policy.onnx.enc"
+    env_path = tmp_path / ".env"
+    env_path.write_text(f"CHECKPOINT={checkpoint_path}\nOUT={out_path}\n")
+
+    monkeypatch.setattr(sys, "argv", ["export_onnx.py", "--env-file", str(env_path)])
+    _main()
+
+    assert out_path.is_file()
+    assert json.loads((out_path.parent / "manifest.json").read_text()) == {"iteration": 9}
+
+
+def test_main_exits_with_an_error_when_neither_cli_nor_env_file_gives_a_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(sys, "argv", ["export_onnx.py", "--env-file", str(tmp_path / "missing.env")])
+    with pytest.raises(SystemExit):
+        _main()
 
 
 def test_onnx_export_does_not_replicate_pytorchs_empty_action_set_guard(tmp_path: Path):

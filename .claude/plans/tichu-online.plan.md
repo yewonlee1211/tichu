@@ -170,14 +170,14 @@ docker compose exec ai pytest ai/tests/test_export_onnx.py
 | 혼합 방(향후 과제) 설계 변경 시 Phase 3 구조를 다시 만들어야 할 위험 | Low | Task 16에서 AI 의사결정을 순수 함수로 분리해둬서, 서버 재사용 시 로딩/캐싱 계층만 새로 짜면 됨 |
 
 ## Acceptance
-- [ ] Phase 0~5 모든 태스크 완료
-- [ ] `pnpm -w test`, `pnpm -w typecheck`, `pnpm -w lint`, Playwright E2E(사람 vs 사람 + 혼자 모드) 모두 통과
-- [ ] `packages/shared`의 규칙+인코딩 테스트가 Python 골든 픽스처와 수치적으로 100% 일치
-- [ ] ONNX export가 PyTorch 원본과 parity 테스트 통과
-- [ ] 혼자 모드가 네트워크 차단 상태에서 재접속 없이 플레이 가능(오프라인 확인)
-- [ ] 학습 중인 체크포인트가 갱신되면 다음 방문 시 새 버전이 감지되어 재다운로드됨(수동 검증)
-- [ ] 사람 vs 사람 연결 끊김 후 유예 시간 내 재접속 시 상태 복원
-- [ ] 혼합 방 확장 지점(protocol.ts 주석, decideAiMove.ts 순수 함수 분리)이 문서화됨
+- [x] Phase 0~5 모든 태스크 완료
+- [x] `pnpm -w test`, `pnpm -w typecheck`, `pnpm -w lint`, Playwright E2E(사람 vs 사람 + 혼자 모드) 모두 통과
+- [x] `packages/shared`의 규칙+인코딩 테스트가 Python 골든 픽스처와 수치적으로 100% 일치
+- [x] ONNX export가 PyTorch 원본과 parity 테스트 통과
+- [x] 혼자 모드가 네트워크 차단 상태에서 재접속 없이 플레이 가능(오프라인 확인) — `e2e/solo-ai.spec.ts`
+- [ ] 학습 중인 체크포인트가 갱신되면 다음 방문 시 새 버전이 감지되어 재다운로드됨(수동 검증) — **블로킹**: M2 학습이 아직 진행 중이라 배포할 실제 checkpoint가 아직 결정되지 않음(`ai/export/.env` 지정 보류, 사용자 결정). 메커니즘 자체(manifest.json iteration 비교 + Cache Storage)는 단위 테스트로 커버되어 있으나, 실제 checkpoint로 하는 수동 QA는 아직 미완료.
+- [x] 사람 vs 사람 연결 끊김 후 유예 시간 내 재접속 시 상태 복원
+- [x] 혼합 방 확장 지점(protocol.ts 주석, decideAiMove.ts 순수 함수 분리)이 문서화됨 — 루트 `CLAUDE.md`에도 명시
 
 ---
-*Status: 진행 중. Phase 0(모노레포 스캐폴드) + Phase 1(공유 규칙 엔진/인코딩/프로토콜, Task 1~9) 완료 — `packages/shared`의 규칙 엔진과 `encoding.ts`가 Python 골든 픽스처와 수치적으로 100% 일치함을 검증(세션: `2026-07-30-m1-web-shared-engine`). Phase 2(멀티플레이어 서버)~5(통합)는 각각 하위 세션(`tichu-multiplayer-server`, `tichu-solo-ai-browser`, `tichu-client-ui`, `tichu-e2e-integration`)에 위임 대기 중.*
+*Status: 거의 완료. Phase 0~5 전체 태스크 완료(세션: `2026-07-30-m1-web-shared-engine`, `tichu-multiplayer-server`, `tichu-solo-ai-browser`, `tichu-client-ui`, `tichu-e2e-integration`). E2E 통합 과정에서 발견된 두 선행 갭(서버 라운드 종료 처리, AI 모델 자산 배포 메커니즘)도 `tichu-e2e-integration` 세션에서 해결. 남은 유일한 미완료 항목은 실제 checkpoint 배치 수동 QA — M2 학습이 정리되는 대로 처리 예정.*
