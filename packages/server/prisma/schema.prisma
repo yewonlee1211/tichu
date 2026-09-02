@@ -1,0 +1,180 @@
+// Phase 1 (.claude/plans/tichu-db-plumbing.handoff.md) -- schema shaped by
+// design discussion in .claude/worklog/sessions/2026-08-31-m1-postgres-prisma-setup.md.
+// Not yet wired into gameServer.ts/soloGame.ts -- that's Phase 2. This only
+// needs to prove the migration pipeline works end-to-end against a shape the
+// team has actually agreed on.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GameEndReason {
+  NORMAL
+  PLAYER_LEFT
+}
+
+/// A registered account. Login is required to take a seat (no guest play) --
+/// `passwordHash` is the app layer's bcrypt/argon2 output, never the raw
+/// password. `ranking` is a simple current-value column for now; a
+/// season/history table can be added later without touching this one.
+model User {
+  id           String   @id @default(uuid())
+  loginId      String   @unique @map("login_id")
+  passwordHash String   @map("password_hash")
+  nickname     String   @unique
+  ranking      Int      @default(1000)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  refreshTokens RefreshToken[]
+  participants  Participant[]
+  soloGames     SoloGame[]
+
+  @@map("users")
+}
+
+/// Opaque, revocable session tokens -- kept separate from `User` (rather than
+/// a single column on it) specifically to allow multiple concurrent
+/// devices/tabs. `tokenHash` mirrors `passwordHash`: never store the raw
+/// token. `expiresAt` is a queryable mirror of the JWT's own `exp` claim --
+/// its real purpose is cheap cleanup/revocation queries without decoding
+/// every row, and `revokedAt` lets a specific token be killed before its
+/// natural expiry (logout, compromise) even though a JWT itself can't be
+/// invalidated once issued.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+/// A "table" a room-list entry represents -- exists independently of any
+/// game being played, and outlives any single match (one room hosts many
+/// `Game`s over time, back-to-back). `activeGameId` (rather than a
+/// status/enum column) is the single source of truth for whether the room is
+/// WAITING or PLAYING, so the two can't drift out of sync: null == WAITING,
+/// set == PLAYING. Room deletion (see design discussion) is only evaluated
+/// while this is null.
+model Room {
+  id       String  @id @default(uuid())
+  code     String  @unique
+  title    String
+  isPublic Boolean @default(true) @map("is_public")
+
+  activeGameId String? @unique @map("active_game_id")
+  activeGame   Game?   @relation("RoomActiveGame", fields: [activeGameId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  participants Participant[]
+  games        Game[]        @relation("RoomGames")
+
+  @@map("rooms")
+}
+
+/// Room membership -- who is seated where. Deliberately does NOT carry
+/// `reconnectToken`/`connected`: with login mandatory, reconnection is "the
+/// same authenticated userId has a Participant row somewhere", resolved live
+/// via RAM (mirroring today's `SessionRegistry`), not a durable column.
+/// `ready` resets to false whenever the room returns to WAITING after a game
+/// ends, so a stale ready flag can't auto-trigger the next game's start.
+model Participant {
+  id     String @id @default(uuid())
+  roomId String @map("room_id")
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id])
+  seat   Int
+  ready  Boolean @default(false)
+
+  @@unique([roomId, seat])
+  @@unique([roomId, userId])
+  @@map("participants")
+}
+
+/// One row per match (first team to 1000 points). Written once, when the
+/// match starts -- rare enough per room that a synchronous write here isn't
+/// on the hot path the way per-turn actions would be.
+model Game {
+  id         String         @id @default(uuid())
+  roomId     String         @map("room_id")
+  room       Room           @relation("RoomGames", fields: [roomId], references: [id], onDelete: Cascade)
+  startedAt  DateTime       @default(now()) @map("started_at")
+  endedAt    DateTime?      @map("ended_at")
+  endReason  GameEndReason? @map("end_reason")
+  winningTeam Int?          @map("winning_team")
+
+  activeForRoom Room?    @relation("RoomActiveGame")
+  rounds        Round[]
+  log           GameLog?
+
+  @@index([roomId])
+  @@map("games")
+}
+
+/// One row per completed round (hand) within a `Game` -- a score checkpoint,
+/// not a full replay log. Written right as each round ends, timed to land
+/// inside the existing `ROUND_OVER_DISPLAY_MS` pause (see root CLAUDE.md)
+/// where the round summary is already on screen, so the write is
+/// imperceptible. On restart, summing this table's scores for a still-active
+/// `Game` recovers the cumulative score to resume from -- the in-flight round
+/// itself (mid-deal/mid-trick state) is not recovered, just re-dealt.
+model Round {
+  id          String   @id @default(uuid())
+  gameId      String   @map("game_id")
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  roundNumber Int      @map("round_number")
+  team1Score  Int      @map("team1_score")
+  team2Score  Int      @map("team2_score")
+  endedAt     DateTime @default(now()) @map("ended_at")
+
+  @@unique([gameId, roundNumber])
+  @@map("rounds")
+}
+
+/// Detailed per-round/per-turn replay data (hands + actual plays) for
+/// completed multiplayer matches -- the AI training corpus (PRD Milestone
+/// 3). Accumulated in RAM for the whole match and written once, in a single
+/// bulk insert, when the game actually ends -- never touched mid-game, so it
+/// adds no per-turn latency. Lost only if the server crashes mid-match (the
+/// match itself still survives via `Round` checkpoints); accepted trade-off.
+model GameLog {
+  id        String   @id @default(uuid())
+  gameId    String   @unique @map("game_id")
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("game_logs")
+}
+
+/// Solo (vs AI) matches. Unlike multiplayer, the server is only ever
+/// contacted once -- after the match ends (solo play runs entirely
+/// client-side/offline, per root CLAUDE.md's "AI model asset deployment" and
+/// the client's `soloGame.ts`) -- so there is no room, no round-by-round
+/// checkpoint, and no separate log table: result and replay payload arrive
+/// together in one HTTP request and land in one row.
+model SoloGame {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkpointVersion String?  @map("checkpoint_version")
+  winningTeam       Int?     @map("winning_team")
+  payload           Json
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("solo_games")
+}

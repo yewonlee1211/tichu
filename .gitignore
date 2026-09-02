@@ -13,6 +13,10 @@ ai/**/*.log
 ai/game_logs/
 ai/export/.env
 
+# Server DB config (see packages/server/.env.example) + generated migrations
+# scaffold state that's local-only until Phase 2 decides the real schema
+packages/server/.env
+
 # AI model assets deployed to the client (regenerated via ai/export/export_onnx.py;
 # see ai/export/.env.example and packages/client/public/models/README.md)
 packages/client/public/models/*.onnx.enc
