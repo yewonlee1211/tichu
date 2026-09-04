@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import {
@@ -60,7 +61,17 @@ interface ConnectionContext {
 }
 
 export interface GameServerOptions {
+  /** Standalone mode: `GameServer` opens its own listening socket on this
+   * port. Mutually exclusive with `server` -- production wiring (see
+   * `index.ts`) uses `server` instead, so the WS upgrade shares one
+   * `http.Server`/port with the Express HTTP API rather than opening a
+   * second port. Tests use this standalone mode (`port: 0`) since they only
+   * ever need the WS surface. */
   readonly port?: number;
+  /** Shared-server mode: attach the WS upgrade handler to an externally
+   * owned `http.Server` instead of opening a new port. The caller owns that
+   * server's lifecycle (listen/close). */
+  readonly server?: HttpServer;
   readonly gracePeriodMs?: number;
   /** Overrides `DEFAULT_ROUND_OVER_DISPLAY_MS`; tests pass ~0 to avoid a
    * multi-second wait for a deterministic assertion. */
@@ -83,10 +94,17 @@ export class GameServer {
       gracePeriodMs: options.gracePeriodMs,
       onExpire: (session) => this.handleSessionExpired(session),
     });
-    this.wss = new WebSocketServer({ port: options.port ?? 0 });
-    this.wss.on('listening', () => {
-      logOperational('server_listening', { port: (this.wss.address() as AddressInfo).port });
-    });
+    if (options.server) {
+      this.wss = new WebSocketServer({ server: options.server });
+      options.server.on('listening', () => {
+        logOperational('server_listening', { port: (options.server!.address() as AddressInfo).port });
+      });
+    } else {
+      this.wss = new WebSocketServer({ port: options.port ?? 0 });
+      this.wss.on('listening', () => {
+        logOperational('server_listening', { port: (this.wss.address() as AddressInfo).port });
+      });
+    }
     this.wss.on('connection', (ws) => this.handleConnection(ws));
   }
 
