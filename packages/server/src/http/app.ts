@@ -2,6 +2,7 @@ import express, { type Express } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { authRouter } from './authController';
+import { roomRouter } from './roomController';
 
 export function createApp(): Express {
   const app = express();
@@ -16,6 +17,7 @@ export function createApp(): Express {
   app.use(express.json());
 
   app.use('/auth', authRouter);
+  app.use('/rooms', roomRouter);
 
   return app;
 }

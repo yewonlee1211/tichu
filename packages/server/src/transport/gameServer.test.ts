@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import {
   ComboType,
@@ -13,13 +13,49 @@ import {
   type PlayerView,
   type ServerMessage,
 } from '@tichu/shared';
-import { GameServer } from './gameServer';
+import type { GameServer as GameServerType } from './gameServer';
+
+// The real repository/DB layer must never be hit from this test file (an
+// unmocked run previously wrote real `Room` rows to the live AWS RDS
+// database -- every JOIN_ROOM now does a best-effort DB write/lookup). These
+// stand in for "DB reachable, nothing found yet" by default; individual
+// tests override a call (e.g. `.mockResolvedValueOnce`) where the DB-backed
+// path itself is under test -- `resetRepoMocks()` restores the defaults
+// before every test so an override never leaks into the next one.
+const roomRepoMock = { createRoom: vi.fn(), findRoomByCode: vi.fn() };
+vi.mock('../repositories/roomRepository', () => roomRepoMock);
+
+const participantRepoMock = { createParticipant: vi.fn() };
+vi.mock('../repositories/participantRepository', () => participantRepoMock);
+
+const userRepoMock = { findUserById: vi.fn() };
+vi.mock('../repositories/userRepository', () => userRepoMock);
+
+function resetRepoMocks(): void {
+  roomRepoMock.createRoom.mockReset().mockImplementation(async (input: { code: string; title: string; isPublic: boolean }) => ({
+    ok: true as const,
+    value: { id: `room-row-${input.code}`, code: input.code, title: input.title, isPublic: input.isPublic, activeGameId: null },
+  }));
+  roomRepoMock.findRoomByCode.mockReset().mockResolvedValue({ ok: true as const, value: null });
+  participantRepoMock.createParticipant
+    .mockReset()
+    .mockImplementation(async (input: { roomId: string; userId: string; seat: number }) => ({
+      ok: true as const,
+      value: { id: 'participant-1', ready: false, ...input },
+    }));
+  userRepoMock.findUserById.mockReset().mockResolvedValue({ ok: true as const, value: null });
+}
+resetRepoMocks();
+
+process.env.JWT_SECRET = 'test-secret';
+const { createAccessToken } = await import('../services/jwt');
+const { GameServer } = await import('./gameServer');
 
 // Real production default is several seconds (see `DEFAULT_ROUND_OVER_DISPLAY_MS`
 // in gameServer.ts) so players actually see the round summary -- tests don't
 // render anything, so keep it near-zero to avoid every round-completing test
 // paying that wait.
-function startServer(gracePeriodMs?: number): GameServer {
+function startServer(gracePeriodMs?: number): GameServerType {
   return new GameServer({ port: 0, gracePeriodMs, roundOverDisplayMs: 10 });
 }
 
@@ -31,9 +67,9 @@ function startServer(gracePeriodMs?: number): GameServer {
 // the *next* one-shot listener, silently losing the second message.
 const readers = new WeakMap<WebSocket, { queue: ServerMessage[]; waiters: Array<(message: ServerMessage) => void> }>();
 
-function connect(server: GameServer): Promise<WebSocket> {
+function connect(server: GameServerType, headers?: Record<string, string>): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${server.address.port}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${server.address.port}`, { headers });
     const state = { queue: [] as ServerMessage[], waiters: [] as Array<(message: ServerMessage) => void> };
     readers.set(ws, state);
     ws.on('message', (data) => {
@@ -72,7 +108,7 @@ interface Player {
   readonly reconnectToken: string;
 }
 
-async function joinFourPlayers(server: GameServer): Promise<{ roomCode: string; players: Player[] }> {
+async function joinFourPlayers(server: GameServerType): Promise<{ roomCode: string; players: Player[] }> {
   const creator = await connect(server);
   send(creator, { type: 'JOIN_ROOM', roomCode: '', playerName: 'p0' });
   const created = await nextMessage(creator);
@@ -162,8 +198,10 @@ function chooseAction(view: PlayerView): ClientMessage {
 }
 
 describe('GameServer', () => {
-  const servers: GameServer[] = [];
+  const servers: GameServerType[] = [];
   const sockets: WebSocket[] = [];
+
+  beforeEach(resetRepoMocks);
 
   afterEach(async () => {
     for (const ws of sockets.splice(0)) ws.terminate();
@@ -400,6 +438,82 @@ describe('GameServer', () => {
     expect(rejection.type).toBe('ERROR');
     if (rejection.type !== 'ERROR') throw new Error('unreachable');
     expect(rejection.message).toMatch(/does not exist/);
+  });
+
+  it('hydrates a room that only exists as a REST-created DB row into a live in-memory room', async () => {
+    const server = startServer();
+    servers.push(server);
+    roomRepoMock.findRoomByCode.mockResolvedValueOnce({ ok: true, value: { id: 'room-row-1', code: 'RESTRM', title: 'Rest Room', isPublic: true, activeGameId: null } });
+
+    const ws = await connect(server);
+    sockets.push(ws);
+    send(ws, { type: 'JOIN_ROOM', roomCode: 'RESTRM', playerName: 'a' });
+    const joined = await nextMessage(ws);
+
+    expect(joined.type).toBe('ROOM_JOINED');
+    if (joined.type !== 'ROOM_JOINED') throw new Error('unreachable');
+    expect(joined.roomCode).toBe('RESTRM');
+    expect(joined.seat).toBe(0);
+  });
+
+  it('persists a Room row (best-effort) when auto-creating a room via an empty JOIN_ROOM code', async () => {
+    const server = startServer();
+    servers.push(server);
+
+    const ws = await connect(server);
+    sockets.push(ws);
+    send(ws, { type: 'JOIN_ROOM', roomCode: '', playerName: 'a' });
+    const joined = await nextMessage(ws);
+
+    expect(joined.type).toBe('ROOM_JOINED');
+    if (joined.type !== 'ROOM_JOINED') throw new Error('unreachable');
+    expect(roomRepoMock.createRoom).toHaveBeenCalledWith({ code: joined.roomCode, title: `Room ${joined.roomCode}`, isPublic: true });
+  });
+
+  it('still joins the room when the best-effort DB room persistence fails', async () => {
+    const server = startServer();
+    servers.push(server);
+    roomRepoMock.createRoom.mockResolvedValueOnce({ ok: false, error: { kind: 'unknown', message: 'connection lost' } });
+
+    const ws = await connect(server);
+    sockets.push(ws);
+    send(ws, { type: 'JOIN_ROOM', roomCode: '', playerName: 'a' });
+    const joined = await nextMessage(ws);
+
+    expect(joined.type).toBe('ROOM_JOINED');
+  });
+
+  it('resolves the seat name from the authenticated account and persists a Participant row, ignoring the client-supplied playerName', async () => {
+    const server = startServer();
+    servers.push(server);
+    userRepoMock.findUserById.mockResolvedValue({ ok: true, value: { id: 'u1', nickname: 'RealNickname' } });
+    const accessToken = createAccessToken('u1');
+
+    const ws = await connect(server, { Cookie: `accessToken=${accessToken}` });
+    sockets.push(ws);
+    send(ws, { type: 'JOIN_ROOM', roomCode: '', playerName: 'SpoofedName' });
+    const joined = await nextMessage(ws);
+
+    expect(joined.type).toBe('ROOM_JOINED');
+    if (joined.type !== 'ROOM_JOINED') throw new Error('unreachable');
+    expect(userRepoMock.findUserById).toHaveBeenCalledWith('u1');
+    expect(participantRepoMock.createParticipant).toHaveBeenCalledWith({
+      roomId: `room-row-${joined.roomCode}`,
+      userId: 'u1',
+      seat: joined.seat,
+    });
+  });
+
+  it('does not persist a Participant row for an unauthenticated connection', async () => {
+    const server = startServer();
+    servers.push(server);
+
+    const ws = await connect(server);
+    sockets.push(ws);
+    send(ws, { type: 'JOIN_ROOM', roomCode: '', playerName: 'a' });
+    await nextMessage(ws);
+
+    expect(participantRepoMock.createParticipant).not.toHaveBeenCalled();
   });
 
   it('rejects actions from a connection that never joined a room', async () => {

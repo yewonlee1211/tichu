@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Server as HttpServer } from 'node:http';
+import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import {
@@ -26,6 +26,10 @@ import { createRoom, generateRoomCode, isRoomFull, joinRoom, leaveRoom, type Roo
 import { SessionRegistry, type PlayerSession } from './session';
 import { buildPlayerView } from '../services/view';
 import { logGameEvent, logOperational } from '../logger';
+import { resolveUpgradeUserId } from './connectionAuth';
+import { createRoom as createRoomRow, findRoomByCode } from '../repositories/roomRepository';
+import { createParticipant } from '../repositories/participantRepository';
+import { findUserById } from '../repositories/userRepository';
 
 interface GameRoom {
   room: Room;
@@ -86,6 +90,15 @@ export class GameServer {
    * are removed on disconnect and restored on a successful RECONNECT. */
   private readonly sockets = new Map<string, Map<number, WebSocket>>();
   private readonly connections = new Map<WebSocket, string>();
+  /** The account behind each open connection, if it presented a valid
+   * `accessToken` cookie at upgrade time -- `null` for an unauthenticated
+   * (still allowed) connection. See `connectionAuth.ts`. */
+  private readonly connectionUsers = new Map<WebSocket, string | null>();
+  /** roomCode -> the persisted `Room` row's id, for rooms that made it into
+   * the DB (best-effort -- see `handleJoinRoom`). Absent for a room whose
+   * persistence attempt failed; that room still works in-memory, it just
+   * won't show up in `GET /rooms` or gain `Participant` rows. */
+  private readonly roomRowIds = new Map<string, string>();
   private readonly roundOverDisplayMs: number;
 
   constructor(options: GameServerOptions = {}) {
@@ -105,7 +118,7 @@ export class GameServer {
         logOperational('server_listening', { port: (this.wss.address() as AddressInfo).port });
       });
     }
-    this.wss.on('connection', (ws) => this.handleConnection(ws));
+    this.wss.on('connection', (ws, req) => this.handleConnection(ws, req));
   }
 
   get address(): AddressInfo {
@@ -118,7 +131,8 @@ export class GameServer {
     });
   }
 
-  private handleConnection(ws: WebSocket): void {
+  private handleConnection(ws: WebSocket, req: IncomingMessage): void {
+    this.connectionUsers.set(ws, resolveUpgradeUserId(req));
     ws.on('message', (data) => this.handleMessage(ws, data));
     ws.on('close', () => this.handleClose(ws));
   }
@@ -134,7 +148,7 @@ export class GameServer {
 
     switch (message.type) {
       case 'JOIN_ROOM':
-        this.handleJoinRoom(ws, message.roomCode, message.playerName);
+        void this.handleJoinRoom(ws, message.roomCode, message.playerName);
         return;
       case 'START_GAME':
         this.handleStartGame(ws);
@@ -166,8 +180,20 @@ export class GameServer {
 
   /** Room creation is not a separate message: JOIN_ROOM with an empty
    * `roomCode` asks the server to mint a fresh code (Task 10 owns
-   * generation), while a non-empty `roomCode` joins an existing room. */
-  private handleJoinRoom(ws: WebSocket, requestedCode: string, playerName: string): void {
+   * generation), while a non-empty `roomCode` joins an existing room --
+   * either one already live in memory, or one created via `POST /rooms`
+   * (REST) that this is the first WS join to touch, in which case its DB row
+   * is hydrated into a fresh in-memory `GameRoom` here.
+   *
+   * DB persistence (the new `Room`/`Participant` rows) is best-effort:
+   * a failure is logged but never blocks the join. In-memory gameplay is the
+   * source of truth for an active room; the DB rows only back `GET /rooms`
+   * and future reconnection-by-account, so login not being wired into the
+   * client yet (or a transient DB error) must not break joining a room. */
+  private async handleJoinRoom(ws: WebSocket, requestedCode: string, requestedPlayerName: string): Promise<void> {
+    const userId = this.connectionUsers.get(ws) ?? null;
+    const playerName = await this.resolvePlayerName(userId, requestedPlayerName);
+
     let gameRoom: GameRoom;
     let roomCode: string;
     if (requestedCode === '') {
@@ -183,14 +209,32 @@ export class GameServer {
       };
       this.rooms.set(roomCode, gameRoom);
       logOperational('room_created', { roomCode });
+
+      const persisted = await createRoomRow({ code: roomCode, title: `Room ${roomCode}`, isPublic: true });
+      if (persisted.ok) this.roomRowIds.set(roomCode, persisted.value.id);
+      else logOperational('room_persist_failed', { roomCode, message: persisted.error.message });
     } else {
       const existing = this.rooms.get(requestedCode);
-      if (existing === undefined) {
-        this.sendError(ws, `room ${requestedCode} does not exist`);
-        return;
+      if (existing !== undefined) {
+        roomCode = requestedCode;
+        gameRoom = existing;
+      } else {
+        const found = await findRoomByCode(requestedCode);
+        if (!found.ok || found.value === null) {
+          this.sendError(ws, `room ${requestedCode} does not exist`);
+          return;
+        }
+        roomCode = requestedCode;
+        this.roomRowIds.set(roomCode, found.value.id);
+        gameRoom = {
+          room: createRoom(roomCode),
+          state: null,
+          pendingGifts: {},
+          cumulativeScores: [0, 0],
+          pendingNextRoundTimer: null,
+        };
+        this.rooms.set(roomCode, gameRoom);
       }
-      roomCode = requestedCode;
-      gameRoom = existing;
     }
 
     const joined = joinRoom(gameRoom.room, { playerId: randomUUID(), playerName });
@@ -204,10 +248,27 @@ export class GameServer {
     this.bindConnection(ws, roomCode, joined.value.seat, session.reconnectToken);
     logOperational('player_joined', { roomCode, seat: joined.value.seat, playerName });
 
+    const roomRowId = this.roomRowIds.get(roomCode);
+    if (userId !== null && roomRowId !== undefined) {
+      const participant = await createParticipant({ roomId: roomRowId, userId, seat: joined.value.seat });
+      if (!participant.ok) logOperational('participant_persist_failed', { roomCode, message: participant.error.message });
+    }
+
     this.sendRoomJoined(ws, roomCode, joined.value.seat, session.reconnectToken);
     // Nothing further to broadcast if the game hasn't started -- STATE_UPDATE
     // carries a PlayerView, which only exists once there is a GameState.
     if (gameRoom.state !== null) this.broadcastState(gameRoom);
+  }
+
+  /** An authenticated connection's account nickname always wins over the
+   * client-supplied name (which the client can no longer be trusted to set
+   * honestly once accounts exist) -- falls back to the client's `playerName`
+   * only when the connection is unauthenticated, since login isn't enforced
+   * client-side yet. */
+  private async resolvePlayerName(userId: string | null, requestedPlayerName: string): Promise<string> {
+    if (userId === null) return requestedPlayerName;
+    const user = await findUserById(userId);
+    return user.ok && user.value !== null ? user.value.nickname : requestedPlayerName;
   }
 
   private handleStartGame(ws: WebSocket): void {
@@ -348,6 +409,7 @@ export class GameServer {
   }
 
   private handleClose(ws: WebSocket): void {
+    this.connectionUsers.delete(ws);
     const reconnectToken = this.connections.get(ws);
     if (reconnectToken === undefined) return;
     this.connections.delete(ws);
@@ -369,6 +431,7 @@ export class GameServer {
       if (gameRoom.pendingNextRoundTimer !== null) clearTimeout(gameRoom.pendingNextRoundTimer);
       this.rooms.delete(session.roomCode);
       this.sockets.delete(session.roomCode);
+      this.roomRowIds.delete(session.roomCode);
       logOperational('room_deleted', { roomCode: session.roomCode });
       return;
     }
