@@ -11,9 +11,18 @@ declare const self: ServiceWorkerGlobalScope;
  * own `fetch()` call whenever a new checkpoint iteration is deployed, silently
  * defeating that version check. So this worker deliberately leaves both URLs alone
  * and only provides a generic cache-first strategy for everything else (the future
- * app shell), which is safe to intercept without any version bookkeeping. */
-function isModelAsset(pathname: string): boolean {
-  return pathname === MODEL_URL || pathname === MANIFEST_URL;
+ * app shell), which is safe to intercept without any version bookkeeping.
+ *
+ * `MODEL_URL`/`MANIFEST_URL` are same-origin relative paths in local dev but a
+ * cross-origin absolute S3 URL in production (`VITE_MODEL_BASE_URL`, see
+ * `modelCache.ts`) -- resolving both sides through `URL` before comparing keeps this
+ * correct either way, instead of comparing a path-only string against a full href. */
+const modelAssetUrls: ReadonlySet<string> = new Set(
+  [MODEL_URL, MANIFEST_URL].map((url) => new URL(url, self.location.origin).href),
+);
+
+function isModelAsset(url: URL): boolean {
+  return modelAssetUrls.has(url.href);
 }
 
 const SHELL_CACHE_NAME = 'tichu-app-shell-v1';
@@ -32,7 +41,7 @@ async function cacheFirst(request: Request): Promise<Response> {
 
 export function handleFetchEvent(event: FetchEvent): void {
   const url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || isModelAsset(url.pathname)) {
+  if (event.request.method !== 'GET' || isModelAsset(url)) {
     return;
   }
   event.respondWith(cacheFirst(event.request));

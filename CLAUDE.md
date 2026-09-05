@@ -65,6 +65,8 @@ To (re)generate:
 
 `OUT` in `.env.example` points at `deploy/client-models/`, which `docker-compose.yml` bind-mounts straight to `packages/client/public/models/` — the export writes both files directly there, no manual copy step. See `packages/client/public/models/README.md` for more detail and `ai/export/export_onnx.py`'s module docstring for the ONNX input/output contract (`obs`/`action_vectors` in, `action_logits`/`state_value` out) that must stay in sync with any change to `TichuPolicyValueNet.forward`.
 
+For an actual deployment (not local dev), a further step uploads that same bundle to S3: `docker compose exec ai python -m export.deploy_s3` (see `ai/export/README.md` for the bucket policy/CORS/IAM setup this requires). The client then needs `VITE_MODEL_BASE_URL` (see `packages/client/src/vite-env.d.ts`) set to that bucket's origin at build time — same build-time-env-var mechanism as `VITE_WS_URL` above. Unset (local dev, E2E), `packages/client/src/ai/modelCache.ts` keeps fetching the same-origin `/models/...` paths described above.
+
 ## Mixed rooms (human + AI in the same room) — explicit future extension point
 
 Out of MVP scope, but two places are already structured for it rather than needing a rewrite:

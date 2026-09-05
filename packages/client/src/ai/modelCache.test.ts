@@ -7,7 +7,31 @@ import {
   fetchManifest,
   readCachedManifest,
   readCachedModelBytes,
+  resolveModelBaseUrl,
 } from './modelCache';
+
+describe('resolveModelBaseUrl', () => {
+  it('returns an empty string when unset, keeping MODEL_URL/MANIFEST_URL same-origin relative', () => {
+    expect(resolveModelBaseUrl(undefined)).toBe('');
+    expect(resolveModelBaseUrl('')).toBe('');
+  });
+
+  it('passes through an absolute http(s) URL unchanged when it has no trailing slash', () => {
+    expect(resolveModelBaseUrl('https://bucket.s3.ap-southeast-2.amazonaws.com')).toBe(
+      'https://bucket.s3.ap-southeast-2.amazonaws.com',
+    );
+  });
+
+  it('strips a trailing slash so concatenating /models/... never double-slashes', () => {
+    expect(resolveModelBaseUrl('https://bucket.s3.ap-southeast-2.amazonaws.com/')).toBe(
+      'https://bucket.s3.ap-southeast-2.amazonaws.com',
+    );
+  });
+
+  it('throws for a scheme-less value instead of silently resolving it as same-origin', () => {
+    expect(() => resolveModelBaseUrl('bucket.s3.ap-southeast-2.amazonaws.com')).toThrow(/absolute http\(s\) URL/);
+  });
+});
 
 /** Minimal in-memory stand-in for the browser's Cache Storage API, enough for
  * this module's `open`/`match`/`put` usage. Node has no `caches` global, so every

@@ -11,8 +11,28 @@
  */
 
 export const MODEL_CACHE_NAME = 'tichu-ai-model-v1';
-export const MODEL_URL = '/models/policy.onnx.enc';
-export const MANIFEST_URL = '/models/manifest.json';
+
+/** Normalizes `VITE_MODEL_BASE_URL` (see `vite-env.d.ts`): strips a trailing slash so
+ * concatenating `/models/...` below never produces a double slash (which would
+ * resolve to a different S3 object key than what `deploy_s3.py` actually uploads),
+ * and fails fast if the value is set but isn't an absolute http(s) URL -- a
+ * scheme-less value (e.g. a bucket host with the `https://` accidentally left off)
+ * would otherwise silently resolve as a same-origin relative path instead of erroring
+ * where the mistake was made. */
+export function resolveModelBaseUrl(rawBaseUrl: string | undefined): string {
+  if (rawBaseUrl === undefined || rawBaseUrl === '') return '';
+  if (!/^https?:\/\//.test(rawBaseUrl)) {
+    throw new Error(`VITE_MODEL_BASE_URL must be an absolute http(s) URL, got: ${rawBaseUrl}`);
+  }
+  return rawBaseUrl.replace(/\/+$/, '');
+}
+
+/** `VITE_MODEL_BASE_URL` points these at the S3 bucket in a production build; unset
+ * (local dev, E2E) they stay same-origin relative paths, served from
+ * `packages/client/public/models/` -- see that directory's README. */
+const MODEL_BASE_URL = resolveModelBaseUrl(import.meta.env.VITE_MODEL_BASE_URL);
+export const MODEL_URL = `${MODEL_BASE_URL}/models/policy.onnx.enc`;
+export const MANIFEST_URL = `${MODEL_BASE_URL}/models/manifest.json`;
 
 export interface ModelManifest {
   readonly iteration: number;
