@@ -12,6 +12,7 @@ dependencies = [
     "torch",
     "onnx",
     "onnxruntime",
+    "boto3",
 ]
 
 [project.optional-dependencies]
