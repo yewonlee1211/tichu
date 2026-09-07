@@ -3,13 +3,14 @@ import type { TableViewModel } from './TableViewModel';
 import { hasWishFulfillingPlay, isPlayableTichuState } from './legalPlay';
 import { usePlayFlow } from './usePlayFlow';
 import { Hand } from './Hand';
-import { Trick } from './Trick';
-import { Scoreboard } from './Scoreboard';
+import { ScoreBar } from './ScoreBar';
 import { LargeTichuPrompt } from './LargeTichuPrompt';
 import { ExchangePrompt } from './ExchangePrompt';
 import { RoundOverSummary } from './RoundOverSummary';
 import { WishPicker } from './WishPicker';
 import { DragonRecipientPicker } from './DragonRecipientPicker';
+import { Seats } from './Seats';
+import { useActionAnnouncement } from './useActionAnnouncement';
 
 export interface GameTableProps {
   readonly vm: TableViewModel;
@@ -18,6 +19,8 @@ export interface GameTableProps {
   readonly errorMessage: string | null;
   readonly exchangeSubmitted: boolean;
   readonly cumulativeScores?: readonly [number, number];
+  /** Each completed round's own score -- solo-only for now, see `ScoreBar`. */
+  readonly roundHistory?: readonly (readonly [number, number])[];
   readonly matchOver?: boolean;
   readonly onNextRound?: () => void;
   readonly onDecideGrandTichu: (called: boolean) => void;
@@ -38,6 +41,7 @@ export function GameTable({
   errorMessage,
   exchangeSubmitted,
   cumulativeScores,
+  roundHistory,
   matchOver,
   onNextRound,
   onDecideGrandTichu,
@@ -57,19 +61,34 @@ export function GameTable({
     currentBest: vm.currentBest,
     lastPlayerToAct: vm.lastPlayerToAct,
     finishedOrder: vm.finishedOrder,
+    passesInARow: vm.passesInARow,
     legalCombos,
     canPassNow,
     onPlayCards,
     onPass,
   });
+  const announcement = useActionAnnouncement(vm);
 
   return (
     <div className="game-table">
+      <ScoreBar viewerSeat={vm.viewerSeat} cumulativeScores={cumulativeScores} roundHistory={roundHistory} />
+
       {errorMessage !== null && (
         <p className="game-table__error" role="alert">
           {errorMessage}
         </p>
       )}
+
+      <Seats
+        seatNames={vm.seatNames}
+        viewerSeat={vm.viewerSeat}
+        currentPlayer={vm.currentPlayer}
+        handSizes={vm.handSizes}
+        tichuCalls={vm.tichuCalls}
+        largeTichuCalls={vm.largeTichuCalls}
+        finishedOrder={vm.finishedOrder}
+        announcement={announcement}
+      />
 
       {vm.phase === Phase.LargeTichu && (
         <LargeTichuPrompt
@@ -102,23 +121,6 @@ export function GameTable({
 
       {vm.phase === Phase.Playing && (
         <>
-          <Scoreboard
-            seatNames={vm.seatNames}
-            handSizes={vm.handSizes}
-            collectedPoints={vm.collectedPoints}
-            tichuCalls={vm.tichuCalls}
-            largeTichuCalls={vm.largeTichuCalls}
-            currentPlayer={vm.currentPlayer}
-            viewerSeat={vm.viewerSeat}
-            finishedOrder={vm.finishedOrder}
-            cumulativeScores={cumulativeScores}
-          />
-          <Trick
-            trickCards={vm.trickCards}
-            currentBest={vm.currentBest}
-            currentPlayerName={vm.seatNames[vm.currentPlayer] ?? `좌석 ${vm.currentPlayer}`}
-            isMyTurn={isMyTurn}
-          />
           {vm.mahjongWish !== null && <p className="game-table__wish">소원: {vm.mahjongWish}</p>}
 
           <Hand cards={vm.hand} selected={flow.selected} onToggle={flow.toggleCard} disabled={busy || flow.step.kind !== 'selecting'} />
@@ -153,15 +155,9 @@ export function GameTable({
 
       {vm.phase === Phase.RoundOver && (
         <RoundOverSummary
-          seatNames={vm.seatNames}
-          handSizes={vm.handSizes}
-          collectedPoints={vm.collectedPoints}
-          tichuCalls={vm.tichuCalls}
-          largeTichuCalls={vm.largeTichuCalls}
-          currentPlayer={vm.currentPlayer}
           viewerSeat={vm.viewerSeat}
-          finishedOrder={vm.finishedOrder}
           cumulativeScores={cumulativeScores}
+          roundHistory={roundHistory}
           matchOver={matchOver}
           onNextRound={onNextRound}
         />

@@ -3,6 +3,7 @@ import { type Card, ComboType, identifyCombo, Phase, type PlayerView, Rank, Suit
 import {
   hasWishFulfillingPlay,
   isAmongLegalCombos,
+  isClosingPass,
   isDragonSingle,
   isPlayableTichuState,
   legalCombosForView,
@@ -30,6 +31,7 @@ function baseView(overrides: Partial<PlayerView>): PlayerView {
     tichuCalls: [false, false, false, false],
     largeTichuCalls: [null, null, null, null],
     mahjongWish: null,
+    passesInARow: 0,
     cumulativeScores: [0, 0],
     ...overrides,
   };
@@ -114,6 +116,37 @@ describe('validDragonRecipients', () => {
 
   it('allows any non-partner opponent still in the round', () => {
     expect(validDragonRecipients(1, [])).toEqual([0, 2]);
+  });
+});
+
+describe('isClosingPass', () => {
+  const dragonBest = identifyCombo([card(Rank.Dragon, Suit.Special)])!;
+
+  it('is false with no open trick', () => {
+    expect(isClosingPass(null, null, [], 0)).toBe(false);
+  });
+
+  it('is false for a pass that still leaves other active players yet to pass, with all 4 seats active', () => {
+    // winner (lastPlayerToAct) is still active -> needs 3 passes total; this would only be the 1st
+    expect(isClosingPass(dragonBest, 1, [], 0)).toBe(false);
+    // this would be the 2nd of the needed 3
+    expect(isClosingPass(dragonBest, 1, [], 1)).toBe(false);
+  });
+
+  it('is true for the pass that reaches the needed count, with all 4 seats active', () => {
+    expect(isClosingPass(dragonBest, 1, [], 2)).toBe(true);
+  });
+
+  it('needs one fewer pass once a seat has already finished the round', () => {
+    // 3 active seats, winner still active -> needs 2 passes total
+    expect(isClosingPass(dragonBest, 1, [3], 0)).toBe(false);
+    expect(isClosingPass(dragonBest, 1, [3], 1)).toBe(true);
+  });
+
+  it('needs a pass from every remaining active seat when the winner themself already finished', () => {
+    // winner (seat 1) already went out; 3 active seats remain, all of whom must pass
+    expect(isClosingPass(dragonBest, 1, [1], 1)).toBe(false);
+    expect(isClosingPass(dragonBest, 1, [1], 2)).toBe(true);
   });
 });
 

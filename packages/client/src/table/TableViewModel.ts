@@ -29,6 +29,9 @@ export interface TableViewModel {
   readonly tichuCalls: readonly boolean[];
   readonly largeTichuCalls: readonly (boolean | null)[];
   readonly mahjongWish: Rank | null;
+  /** Consecutive passes since `currentBest` was set -- see `isClosingPass`
+   * in `legalPlay.ts`. */
+  readonly passesInARow: number;
   readonly seatNames: readonly string[];
 }
 
@@ -51,6 +54,7 @@ export function fromPlayerView(view: PlayerView, seatNames: readonly string[] = 
     tichuCalls: view.tichuCalls,
     largeTichuCalls: view.largeTichuCalls,
     mahjongWish: view.mahjongWish,
+    passesInARow: view.passesInARow,
     seatNames,
   };
 }
@@ -77,6 +81,7 @@ export function fromSoloGameState(state: GameState, humanSeat: number): TableVie
     tichuCalls: state.tichuCalls,
     largeTichuCalls: state.largeTichuCalls,
     mahjongWish: state.mahjongWish,
+    passesInARow: state.passesInARow,
     seatNames: SOLO_SEAT_NAMES,
   };
 }

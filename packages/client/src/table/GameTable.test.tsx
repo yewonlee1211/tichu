@@ -24,6 +24,7 @@ function baseVm(overrides: Partial<TableViewModel>): TableViewModel {
     tichuCalls: [false, false, false, false],
     largeTichuCalls: [null, null, null, null],
     mahjongWish: null,
+    passesInARow: 0,
     seatNames,
     ...overrides,
   };
@@ -151,5 +152,68 @@ describe('GameTable playing phase interaction', () => {
       />,
     );
     expect(screen.getByRole('button', { name: '패스' })).toBeEnabled();
+  });
+
+  it('shows a center-screen announcement naming the player, the cards played, and the combo once the view model reflects a play', () => {
+    const { rerender } = render(
+      <GameTable
+        vm={baseVm({ phase: Phase.Playing, currentPlayer: 1, viewerSeat: 0, handSizes: [8, 8, 8, 8] })}
+        legalCombos={[]}
+        busy={false}
+        errorMessage={null}
+        exchangeSubmitted={false}
+        {...noop}
+      />,
+    );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    const kingCombo = identifyCombo([{ rank: Rank.King, suit: Suit.Sword }])!;
+    rerender(
+      <GameTable
+        vm={baseVm({
+          phase: Phase.Playing,
+          currentPlayer: 2,
+          viewerSeat: 0,
+          handSizes: [8, 7, 8, 8],
+          currentBest: kingCombo,
+          lastPlayerToAct: 1,
+        })}
+        legalCombos={[]}
+        busy={false}
+        errorMessage={null}
+        exchangeSubmitted={false}
+        {...noop}
+      />,
+    );
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('AI 1');
+    expect(status).toHaveTextContent('싱글 K');
+  });
+
+  it('does not show or disturb the announcement when a player merely passes', () => {
+    const { rerender } = render(
+      <GameTable
+        vm={baseVm({ phase: Phase.Playing, currentPlayer: 1, viewerSeat: 0, handSizes: [8, 8, 8, 8] })}
+        legalCombos={[]}
+        busy={false}
+        errorMessage={null}
+        exchangeSubmitted={false}
+        {...noop}
+      />,
+    );
+
+    rerender(
+      <GameTable
+        vm={baseVm({ phase: Phase.Playing, currentPlayer: 2, viewerSeat: 0, handSizes: [8, 8, 8, 8] })}
+        legalCombos={[]}
+        busy={false}
+        errorMessage={null}
+        exchangeSubmitted={false}
+        {...noop}
+      />,
+    );
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { type Card, cardKey, type Combo, identifyCombo, Rank } from '@tichu/shared';
-import { isAmongLegalCombos, isDragonSingle, validDragonRecipients } from './legalPlay';
+import { isAmongLegalCombos, isClosingPass, isDragonSingle, validDragonRecipients } from './legalPlay';
 
 export type PlayFlowStep =
   | { readonly kind: 'selecting' }
@@ -17,6 +17,10 @@ export interface UsePlayFlowArgs {
    * in `packages/shared/src/gameState.ts`. */
   readonly lastPlayerToAct: number | null;
   readonly finishedOrder: readonly number[];
+  /** Consecutive passes since `currentBest` was set -- needed to tell
+   * whether a pass right now would actually close the trick (see
+   * `isClosingPass` in `legalPlay.ts`). */
+  readonly passesInARow: number;
   readonly legalCombos: readonly Combo[];
   readonly canPassNow: boolean;
   readonly onPlayCards: (cards: readonly Card[], wish: Rank | null, dragonRecipient: number | null) => void;
@@ -48,8 +52,18 @@ function handSignature(hand: readonly Card[]): string {
  * Kept separate from `GameTable` so the flow itself is unit-testable without
  * rendering. */
 export function usePlayFlow(args: UsePlayFlowArgs): UsePlayFlowResult {
-  const { hand, viewerSeat, currentBest, lastPlayerToAct, finishedOrder, legalCombos, canPassNow, onPlayCards, onPass } =
-    args;
+  const {
+    hand,
+    viewerSeat,
+    currentBest,
+    lastPlayerToAct,
+    finishedOrder,
+    passesInARow,
+    legalCombos,
+    canPassNow,
+    onPlayCards,
+    onPass,
+  } = args;
   const [selected, setSelected] = useState<readonly Card[]>([]);
   const [step, setStep] = useState<PlayFlowStep>({ kind: 'selecting' });
   const lastHandSignature = useRef(handSignature(hand));
@@ -97,7 +111,7 @@ export function usePlayFlow(args: UsePlayFlowArgs): UsePlayFlowResult {
 
   function submitPass(): void {
     if (!canPassNow) return;
-    if (isDragonSingle(currentBest)) {
+    if (isDragonSingle(currentBest) && isClosingPass(currentBest, lastPlayerToAct, finishedOrder, passesInARow)) {
       setStep({ kind: 'dragon', action: 'pass', wish: null });
       return;
     }

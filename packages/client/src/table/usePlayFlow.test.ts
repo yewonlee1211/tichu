@@ -19,6 +19,7 @@ function setup(overrides: Partial<Parameters<typeof usePlayFlow>[0]> = {}) {
       currentBest: null,
       lastPlayerToAct: null,
       finishedOrder: [],
+      passesInARow: 0,
       legalCombos,
       canPassNow: true,
       onPlayCards,
@@ -103,13 +104,14 @@ describe('usePlayFlow submitPass', () => {
     expect(onPass).toHaveBeenCalledWith(null);
   });
 
-  it('routes through a dragon-recipient step keyed on lastPlayerToAct, not the passer', () => {
+  it('routes through a dragon-recipient step keyed on lastPlayerToAct, not the passer -- when this pass actually closes the trick', () => {
     const dragonBest = identifyCombo([card(Rank.Dragon, Suit.Special)]);
     const { result, onPass } = setup({
       currentBest: dragonBest,
       lastPlayerToAct: 1,
       viewerSeat: 3, // seat 3 is the one passing/closing the trick
       finishedOrder: [],
+      passesInARow: 2, // seats 2 and 0 already passed; this is the 3rd (closing) pass
     });
 
     act(() => result.current.submitPass());
@@ -119,6 +121,21 @@ describe('usePlayFlow submitPass', () => {
 
     act(() => result.current.chooseDragonRecipient(0));
     expect(onPass).toHaveBeenCalledWith(0);
+  });
+
+  it('passes immediately with no dragon step when this pass is not the one closing the trick', () => {
+    const dragonBest = identifyCombo([card(Rank.Dragon, Suit.Special)]);
+    const { result, onPass } = setup({
+      currentBest: dragonBest,
+      lastPlayerToAct: 1,
+      viewerSeat: 2, // seat 2 passes first, right after the Dragon owner (seat 1)
+      finishedOrder: [],
+      passesInARow: 0, // 2 more passes (seat 3, then seat 0) are still needed to close
+    });
+
+    act(() => result.current.submitPass());
+    expect(result.current.step).toEqual({ kind: 'selecting' });
+    expect(onPass).toHaveBeenCalledWith(null);
   });
 
   it('does nothing when canPassNow is false', () => {
@@ -140,6 +157,7 @@ describe('usePlayFlow reset behavior', () => {
           currentBest: null,
           lastPlayerToAct: null,
           finishedOrder: [],
+          passesInARow: 0,
           legalCombos: legal,
           canPassNow: true,
           onPlayCards: vi.fn(),

@@ -25,6 +25,7 @@ export function buildPlayerView(
     tichuCalls: state.tichuCalls,
     largeTichuCalls: state.largeTichuCalls,
     mahjongWish: state.mahjongWish,
+    passesInARow: state.passesInARow,
     cumulativeScores,
   };
 }

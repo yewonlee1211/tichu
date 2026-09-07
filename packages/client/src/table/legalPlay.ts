@@ -81,6 +81,26 @@ export function validDragonRecipients(winner: number, finishedOrder: readonly nu
   return seats;
 }
 
+/** Whether a pass right now (the (passesInARow + 1)-th consecutive one)
+ * would be the one that actually closes the current trick, as opposed to an
+ * earlier pass still awaiting others -- mirrors `passTurn`'s `neededPasses`
+ * computation in `packages/shared/src/gameState.ts`. Needed because a Dragon
+ * single stays `currentBest` for every pass leading up to the close, not
+ * just the last one, so `currentBest` being a Dragon single alone isn't
+ * enough to know whether *this* pass is the moment to ask for a recipient. */
+export function isClosingPass(
+  currentBest: Combo | null,
+  lastPlayerToAct: number | null,
+  finishedOrder: readonly number[],
+  passesInARow: number,
+): boolean {
+  if (currentBest === null || lastPlayerToAct === null) return false;
+  const activeCount = NUM_PLAYERS - finishedOrder.length;
+  const winnerStillActive = !finishedOrder.includes(lastPlayerToAct);
+  const neededPasses = winnerStillActive ? activeCount - 1 : activeCount;
+  return passesInARow + 1 >= neededPasses;
+}
+
 export function isPlayableTichuState(phase: Phase, handSize: number, alreadyCalled: boolean): boolean {
   return (phase === Phase.Exchange || phase === Phase.Playing) && handSize === 14 && !alreadyCalled;
 }

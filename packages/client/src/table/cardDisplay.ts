@@ -1,4 +1,4 @@
-import { type Card, cardKey, ComboType, Rank, Suit } from '@tichu/shared';
+import { type Card, cardKey, type Combo, ComboType, Rank, Suit } from '@tichu/shared';
 
 const RANK_LABELS: Readonly<Record<Rank, string>> = {
   [Rank.Dog]: '개',
@@ -51,6 +51,18 @@ export function suitSymbol(suit: Suit): string {
 export function cardLabel(card: Card): string {
   const suit = suitSymbol(card.suit);
   return suit === '' ? rankLabel(card.rank) : `${rankLabel(card.rank)}${suit}`;
+}
+
+/** A short combo-type-plus-rank description, e.g. "싱글 5", "페어 K", "스트레이트 A"
+ * (straights/pair-straights/bomb-straight-flushes use their top card).
+ * `Combo.rankStrength` already carries exactly this representative rank for
+ * every combo type except a lone-Phoenix single (which plays as rank 0.5, not
+ * a real `Rank`). */
+export function comboDescription(combo: Combo): string {
+  const typeLabel = COMBO_TYPE_LABELS[combo.comboType];
+  if (combo.comboType === ComboType.Dog) return typeLabel;
+  if (combo.isLonePhoenix) return `${typeLabel} ${rankLabel(Rank.Phoenix)}`;
+  return `${typeLabel} ${rankLabel(combo.rankStrength as Rank)}`;
 }
 
 export { cardKey };

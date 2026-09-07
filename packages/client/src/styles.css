@@ -110,8 +110,7 @@ label {
 .waiting-room,
 .solo-entry,
 .phase-prompt,
-.scoreboard,
-.trick {
+.score-history {
   background: var(--color-surface);
   border: 1px solid var(--color-felt-light);
   border-radius: var(--radius-lg);
@@ -146,6 +145,180 @@ label {
 .waiting-room__error {
   color: var(--color-danger);
   font-weight: 600;
+}
+
+.exchange-toast__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 50%);
+  cursor: pointer;
+}
+
+.exchange-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-gold);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  padding: 0.75rem 1rem;
+  color: var(--color-ink);
+  cursor: default;
+}
+
+.exchange-toast__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 1rem;
+}
+
+.exchange-toast__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.exchange-toast__name {
+  font-size: 0.85rem;
+  color: var(--color-ink-dim);
+}
+
+/* ---- seat layout ---- */
+
+.seats {
+  display: grid;
+  grid-template-columns: 1fr minmax(18rem, 30rem) 1fr;
+  grid-template-rows: auto auto auto;
+  grid-template-areas:
+    '.    top    .'
+    'left center right'
+    '.    bottom .';
+  gap: 0.75rem;
+  align-items: center;
+  justify-items: center;
+  width: min(100%, 46rem);
+  margin: 0 auto 1rem;
+}
+
+.seats__seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-felt-light);
+  background: var(--color-surface);
+  min-width: 6rem;
+}
+
+.seats__seat--top {
+  grid-area: top;
+}
+
+.seats__seat--right {
+  grid-area: right;
+}
+
+.seats__seat--bottom {
+  grid-area: bottom;
+}
+
+.seats__seat--left {
+  grid-area: left;
+}
+
+.seats__seat--active {
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 2px var(--color-gold);
+}
+
+.seats__seat--partner {
+  background: var(--color-surface-raised);
+}
+
+.seats__name {
+  font-weight: 700;
+}
+
+.seats__relation {
+  font-size: 0.75rem;
+  color: var(--color-ink-dim);
+}
+
+.seats__hand-size {
+  font-size: 0.8rem;
+}
+
+.seats__badges {
+  font-size: 0.75rem;
+  color: var(--color-gold-bright);
+  font-weight: 600;
+}
+
+.seats__center {
+  grid-area: center;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 9rem;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, var(--color-felt-light), var(--color-felt) 75%);
+}
+
+/* ---- action announcement ---- */
+
+/* Anchored to `.seats__center` (the felt circle at the middle of the table),
+   not the viewport. `.seats__center` is sized generously (see its own rule)
+   specifically so this banner's content -- name, card row, combo label --
+   fits inside the circle instead of spilling past its edge. Also doubles as
+   the "current trick" display (the played cards + combo name), replacing
+   the old standalone Trick section. */
+.action-announcement {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-gold);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  padding: 0.6rem 1rem;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.action-announcement__name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-gold-bright);
+}
+
+.action-announcement__cards {
+  list-style: none;
+  display: flex;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+}
+
+.action-announcement__label {
+  font-size: 0.9rem;
+  color: var(--color-ink-dim);
 }
 
 /* ---- cards ---- */
@@ -221,39 +394,73 @@ button.card:hover:not(:disabled) {
   background: var(--color-surface-raised);
 }
 
-/* ---- trick / scoreboard ---- */
+/* ---- score bar / score history ---- */
 
-.trick__cards {
+.score-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  width: min(100%, 40rem);
+  background: var(--color-surface);
+  border: 1px solid var(--color-felt-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  padding: 0.5rem 1.25rem;
+  margin-bottom: 1rem;
 }
 
-.trick__turn--mine {
+.score-bar__summary {
+  font-weight: 700;
+  color: var(--color-gold-bright);
+}
+
+.score-bar__history-button {
+  padding: 0.3rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.score-bar__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.score-bar__panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-gold);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  padding: 1.5rem;
+  width: min(90vw, 24rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.score-history__rounds {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.score-history__empty {
+  color: var(--color-ink-dim);
+}
+
+.score-history__total {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-felt-light);
   color: var(--color-gold-bright);
   font-weight: 700;
-}
-
-.scoreboard table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.scoreboard th,
-.scoreboard td {
-  text-align: left;
-  padding: 0.35rem 0.5rem;
-  border-bottom: 1px solid var(--color-felt-light);
-}
-
-.scoreboard__row--active {
-  background: rgba(212, 175, 55, 0.15);
-}
-
-.scoreboard__totals {
-  margin-top: 0.75rem;
-  color: var(--color-gold-bright);
 }
 
 /* ---- exchange / pickers ---- */

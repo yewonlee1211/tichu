@@ -21,6 +21,7 @@ describe('fromPlayerView', () => {
       tichuCalls: [false, false, false, false],
       largeTichuCalls: [null, null, null, null],
       mahjongWish: null,
+      passesInARow: 0,
       cumulativeScores: [0, 0],
     };
 
@@ -48,6 +49,7 @@ describe('fromPlayerView', () => {
       tichuCalls: [false, false, false, false],
       largeTichuCalls: [null, null, null, null],
       mahjongWish: null,
+      passesInARow: 0,
       cumulativeScores: [0, 0],
     };
 

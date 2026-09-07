@@ -89,6 +89,11 @@ export interface PlayerView {
   readonly tichuCalls: readonly boolean[];
   readonly largeTichuCalls: readonly (boolean | null)[];
   readonly mahjongWish: Rank | null;
+  /** Consecutive passes since the current trick's `currentBest` was set --
+   * lets the client tell whether *this* pass would be the one that actually
+   * closes the trick, as opposed to an earlier pass in the same trick (see
+   * `isClosingPass` in the client's `legalPlay.ts`). */
+  readonly passesInARow: number;
   /** [team(0,2) total, team(1,3) total] accumulated across the match so far,
    * not including the currently in-progress round. */
   readonly cumulativeScores: readonly [number, number];
