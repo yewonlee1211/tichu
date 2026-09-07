@@ -145,7 +145,17 @@ def legal_combos(state: GameState, player: int) -> list[Combo]:
     Candidates come from `legal_moves.candidate_card_sets`, which builds them
     from the hand's rank/suit structure instead of a brute-force subset scan
     (2**14 in the worst case) -- `identify_combo`/`beats` still decide what
-    is actually legal, this just avoids checking every possible subset."""
+    is actually legal, this just avoids checking every possible subset.
+
+    If a Mahjong wish is outstanding and any of these combos would fulfill it
+    (contains a card of the wished rank), the result is narrowed to just
+    those -- mirroring the obligation `play_combo`/`pass_turn` already
+    enforce by rejecting a submission that ignores a fulfillable wish.
+    Without this, a caller that treats this list as "the candidates to
+    choose from" (TichuEnv's action space during self-play, and the TS
+    client's play UI) could offer or pick a combo the reducer would then
+    reject -- during self-play that meant an unconditional ValueError
+    instead of a legal action space that already excludes it."""
     hand = state.hands[player]
     is_leading = state.current_best is None
 
@@ -175,6 +185,13 @@ def legal_combos(state: GameState, player: int) -> list[Combo]:
             found.append(combo)
         elif beats(combo, state.current_best, state.current_strength):
             found.append(combo)
+
+    if state.mahjong_wish is not None:
+        wished_rank = state.mahjong_wish
+        fulfilling = [combo for combo in found if any(card.rank is wished_rank for card in combo.cards)]
+        if fulfilling:
+            return fulfilling
+
     return found
 
 

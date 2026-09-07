@@ -495,6 +495,38 @@ def test_cannot_pass_when_wish_is_fulfillable():
     assert resolved.mahjong_wish is None
 
 
+def test_legal_combos_narrows_to_wish_fulfilling_plays_when_possible():
+    # Bug: legal_combos previously ignored an outstanding wish entirely, so a
+    # caller that treats it as "the candidates to choose from" (TichuEnv's
+    # action space during self-play) could offer/pick a combo that
+    # play_combo would then reject with a ValueError -- freezing/crashing
+    # whatever loop was driving actions from this list.
+    state = make_playing_state(
+        {1: [card(Rank.NINE), card(Rank.THREE), card(Rank.FOUR)]},
+        current_player=1,
+        trick_leader=1,
+        mahjong_wish=Rank.NINE,
+    )
+
+    combos = legal_combos(state, 1)
+
+    assert combos
+    assert all(any(c.rank is Rank.NINE for c in combo.cards) for combo in combos)
+
+
+def test_legal_combos_falls_back_to_full_list_when_wish_is_unreachable():
+    state = make_playing_state(
+        {1: [card(Rank.THREE), card(Rank.FOUR)]},
+        current_player=1,
+        trick_leader=1,
+        mahjong_wish=Rank.NINE,
+    )
+
+    combos = legal_combos(state, 1)
+
+    assert len(combos) == 2
+
+
 # ---------------------------------------------------------------------------
 # Legal move enumeration
 # ---------------------------------------------------------------------------

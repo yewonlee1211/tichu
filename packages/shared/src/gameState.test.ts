@@ -404,3 +404,64 @@ describe('identifyCombo smoke test (cross-module sanity)', () => {
     expect(identifyCombo([card(Rank.Five), card(Rank.Six)])).toBeNull();
   });
 });
+
+describe('legalCombos: outstanding Mahjong wish narrows the candidate list', () => {
+  it('leading with the Mahjong and wishing for a rank still in hand succeeds (the wish is not yet active for this play)', () => {
+    const hand0 = [special(Rank.Mahjong), card(Rank.King), card(Rank.Three)];
+    const state = makePlayingState(
+      { 0: hand0, 1: [card(Rank.Four)], 2: [card(Rank.Five)], 3: [card(Rank.Six)] },
+      { currentPlayer: 0, trickLeader: 0 },
+    );
+
+    const result = playCombo(state, 0, [special(Rank.Mahjong)], Rank.King, null);
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('narrows a player\'s legal combos to only the wish-fulfilling ones once a wish is outstanding and they can fulfill it', () => {
+    // Bug: legalCombos previously ignored an outstanding wish entirely, so a
+    // caller that treats it as "the candidates to pick from" (the client's
+    // play UI, and the AI's encodeLegalActions) could offer/pick a combo that
+    // playCombo would then reject -- for the AI, that rejection is a thrown
+    // exception (SoloGame's `mustOk`), which froze the whole game.
+    const hand1 = [card(Rank.King), card(Rank.Three), card(Rank.Four)];
+    const state = makePlayingState(
+      { 0: [], 1: hand1, 2: [], 3: [] },
+      { currentPlayer: 1, trickLeader: 1, currentBest: null, mahjongWish: Rank.King },
+    );
+
+    const combos = legalCombos(state, 1);
+
+    expect(combos.length).toBeGreaterThan(0);
+    expect(combos.every((c) => c.cards.some((card) => card.rank === Rank.King))).toBe(true);
+  });
+
+  it('falls back to the full legal combo list when the player cannot fulfill the wish at all', () => {
+    const hand1 = [card(Rank.Three), card(Rank.Four)];
+    const state = makePlayingState(
+      { 0: [], 1: hand1, 2: [], 3: [] },
+      { currentPlayer: 1, trickLeader: 1, currentBest: null, mahjongWish: Rank.King },
+    );
+
+    const combos = legalCombos(state, 1);
+
+    expect(combos.length).toBe(2);
+    expect(combos.some((c) => c.cards[0]?.rank === Rank.Three)).toBe(true);
+    expect(combos.some((c) => c.cards[0]?.rank === Rank.Four)).toBe(true);
+  });
+
+  it('rejects a lead that ignores an outstanding, fulfillable wish even from the original wisher', () => {
+    // Simulates: I lead Mahjong+wish(King), keep the King, everyone else
+    // passes (the trick comes back to me as leader again), then I try to
+    // lead something that does not include the King even though I could.
+    const hand0 = [card(Rank.King), card(Rank.Three), card(Rank.Four)];
+    const state = makePlayingState(
+      { 0: hand0, 1: [], 2: [], 3: [] },
+      { currentPlayer: 0, trickLeader: 0, currentBest: null, mahjongWish: Rank.King },
+    );
+
+    const result = playCombo(state, 0, [card(Rank.Three)], null, null);
+
+    expect(result.ok).toBe(false);
+  });
+});

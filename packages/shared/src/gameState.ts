@@ -158,7 +158,16 @@ function comboKey(cards: readonly Card[]): string {
 /** All combos `player` may legally play right now. Only the trick leader may
  * open a fresh trick (any combo type, including a bomb); once a trick is
  * under way, ordinary combos are restricted to whoever's turn it is, while
- * bombs remain legal for any active player as an interrupt. */
+ * bombs remain legal for any active player as an interrupt.
+ *
+ * If a Mahjong wish is outstanding and any of these combos would fulfill it
+ * (contains a card of the wished rank), the result is narrowed to just those
+ * -- mirroring the obligation `playCombo`/`passTurn` already enforce by
+ * rejecting a submission that ignores a fulfillable wish. Without this, a
+ * caller that treats this list as "the candidates to choose from" (the AI's
+ * `encodeLegalActions`, and the client's play/submit UI) could offer or pick
+ * a combo that the reducer would then reject, which for the AI meant an
+ * unconditional `mustOk` throw instead of a graceful legality check. */
 export function legalCombos(state: GameState, player: number): Combo[] {
   const hand = state.hands[player]!;
   const isLeading = state.currentBest === null;
@@ -187,6 +196,13 @@ export function legalCombos(state: GameState, player: number): Combo[] {
       found.push(combo);
     }
   }
+
+  if (state.mahjongWish !== null) {
+    const wishedRank = state.mahjongWish;
+    const fulfilling = found.filter((combo) => combo.cards.some((c) => c.rank === wishedRank));
+    if (fulfilling.length > 0) return fulfilling;
+  }
+
   return found;
 }
 
