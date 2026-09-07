@@ -1,21 +1,36 @@
-import { type Card, cardKey } from '@tichu/shared';
+import { cardKey } from '@tichu/shared';
 import { cardLabel } from './cardDisplay';
+import type { ActionAnnouncement } from './useActionAnnouncement';
 
 export interface ActionAnnouncementBannerProps {
-  readonly seatName: string;
-  /** The cards actually played -- empty for a pass, which shows no card row. */
-  readonly cards: readonly Card[];
-  readonly label: string;
+  readonly announcement: ActionAnnouncement;
+  readonly seatNames: readonly string[];
 }
 
-/** Center-screen, transient callout for the most recent play/pass -- see
- * `useActionAnnouncement` for how that action is determined. Player name on
- * top, the actual cards played in the middle (omitted for a pass), and the
- * combo description (e.g. "싱글 5") on the bottom. */
-export function ActionAnnouncementBanner({ seatName, cards, label }: ActionAnnouncementBannerProps) {
+function seatName(seatNames: readonly string[], seat: number): string {
+  return seatNames[seat] ?? `좌석 ${seat}`;
+}
+
+/** Center-screen, transient callout over the table -- see
+ * `useActionAnnouncement` for how each variant is determined. A `play`
+ * shows the player's name on top, the actual cards played in the middle,
+ * and the combo description (e.g. "싱글 5") on the bottom. A `trickWon`
+ * instead shows who just won the open trick and who leads the next one,
+ * replacing the last play's cards until that new leader actually plays. */
+export function ActionAnnouncementBanner({ announcement, seatNames }: ActionAnnouncementBannerProps) {
+  if (announcement.kind === 'trickWon') {
+    return (
+      <div className="action-announcement" role="status" aria-live="polite">
+        <span className="action-announcement__name">{seatName(seatNames, announcement.winnerSeat)} 님이 트릭 획득</span>
+        <span className="action-announcement__label">{seatName(seatNames, announcement.nextSeat)} 님의 차례</span>
+      </div>
+    );
+  }
+
+  const { seat, cards, label } = announcement;
   return (
     <div className="action-announcement" role="status" aria-live="polite">
-      <span className="action-announcement__name">{seatName}</span>
+      <span className="action-announcement__name">{seatName(seatNames, seat)}</span>
       {cards.length > 0 && (
         <ul className="action-announcement__cards">
           {cards.map((c) => (

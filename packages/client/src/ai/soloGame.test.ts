@@ -343,43 +343,39 @@ describe('SoloGame: Large Tichu and exchange', () => {
     }
   });
 
-  it('fires onExchangeReceived immediately, before any subsequent AI turn delay elapses', async () => {
-    vi.useFakeTimers();
-    try {
-      // Force seat 1 to lead post-exchange (see the pacing describe block
-      // below for why this must be pinned rather than left to a random
-      // deal), so there is at least one AI turn -- and its aiTurnDelayMs
-      // pause -- for onExchangeReceived to need to race against.
-      const deck = [...createDeck()];
-      const mahjongIndex = deck.findIndex((c) => c.rank === Rank.Mahjong);
-      const [mahjong] = deck.splice(mahjongIndex, 1);
-      deck.unshift(mahjong!);
+  it('fires onExchangeReceived immediately, before the first AI turn even reaches its awaitAdvance gate', async () => {
+    // Force seat 1 to lead post-exchange (see the pacing describe block
+    // below for why this must be pinned rather than left to a random deal),
+    // so there is at least one AI turn for onExchangeReceived to need to
+    // race against.
+    const deck = [...createDeck()];
+    const mahjongIndex = deck.findIndex((c) => c.rank === Rank.Mahjong);
+    const [mahjong] = deck.splice(mahjongIndex, 1);
+    deck.unshift(mahjong!);
 
-      let receivedAt: 'not yet' | 'received' = 'not yet';
-      const game = new SoloGame({
-        session: stubSession(),
-        deck,
-        aiTurnDelayMs: 2000,
-        onExchangeReceived: () => {
-          receivedAt = 'received';
-        },
-      });
-      game.decideHumanLargeTichu(false);
+    let receivedAt: 'not yet' | 'received' = 'not yet';
+    const game = new SoloGame({
+      session: stubSession(),
+      deck,
+      // Never resolves -- if onExchangeReceived fired late (e.g. after the
+      // exchange step started draining AI turns), it would never fire at
+      // all in this test, since seat 1's turn would be stuck on this gate
+      // forever. Its absence would show up as `receivedAt` staying 'not yet'.
+      awaitAdvance: () => new Promise<void>(() => {}),
+      onExchangeReceived: () => {
+        receivedAt = 'received';
+      },
+    });
+    game.decideHumanLargeTichu(false);
 
-      const hand = game.getState().hands[HUMAN_SEAT]!;
-      const others = hand.filter((c) => c.rank !== Rank.Mahjong).sort((a, b) => a.rank - b.rank);
-      const pending = game.submitHumanExchange({ 1: mahjong!, 2: others[0]!, 3: others[1]! });
+    const hand = game.getState().hands[HUMAN_SEAT]!;
+    const others = hand.filter((c) => c.rank !== Rank.Mahjong).sort((a, b) => a.rank - b.rank);
+    // Deliberately not awaited -- onExchangeReceived must already have fired
+    // synchronously within the exchange step, before this call even yields
+    // to the first AI turn's (permanently pending) awaitAdvance gate.
+    void game.submitHumanExchange({ 1: mahjong!, 2: others[0]!, 3: others[1]! });
 
-      // Not even one microtask tick, let alone the 2s AI turn delay --
-      // onExchangeReceived must already have fired synchronously within the
-      // exchange step, well before the first AI turn's delay could elapse.
-      expect(receivedAt).toBe('received');
-
-      await vi.advanceTimersByTimeAsync(10_000);
-      await pending;
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(receivedAt).toBe('received');
   });
 });
 
@@ -387,9 +383,9 @@ describe('SoloGame: AI turn pacing', () => {
   // A random deal would sometimes hand the human the Mahjong and let them
   // lead first, needing zero AI turns before returning control -- which
   // would make both tests below flaky depending on the draw (no onTurnResolved
-  // calls, or the exchange resolving before ever touching aiTurnDelayMs).
+  // calls, or the exchange resolving before ever touching awaitAdvance).
   // Forcing the human to hold the Mahjong and then gift it away to seat 1
-  // guarantees seat 1 leads, so at least one AI turn (and its delay) always
+  // guarantees seat 1 leads, so at least one AI turn (and its gate) always
   // happens.
   function deckWithHumanMahjongFirst(): Card[] {
     const deck = [...createDeck()];
@@ -420,33 +416,47 @@ describe('SoloGame: AI turn pacing', () => {
     }
   });
 
-  it('waits aiTurnDelayMs between AI turns instead of draining them all instantly', async () => {
-    vi.useFakeTimers();
-    try {
-      const game = new SoloGame({ session: stubSession(), aiTurnDelayMs: 2000, deck: deckWithHumanMahjongFirst() });
-      game.decideHumanLargeTichu(false);
+  it('waits for awaitAdvance to resolve before each AI turn, instead of draining them all instantly', async () => {
+    // Manual gate standing in for the real app's "wait for a screen tap":
+    // `wait()` is what SoloGame awaits before each AI turn: `isWaiting`
+    // reports whether it's currently blocked there, and `release()` is the
+    // test's equivalent of the player's tap.
+    let resolveWait: (() => void) | null = null;
+    const gate = {
+      wait: () => new Promise<void>((resolve) => (resolveWait = resolve)),
+      get isWaiting() {
+        return resolveWait !== null;
+      },
+      release: () => {
+        const resolve = resolveWait;
+        resolveWait = null;
+        resolve?.();
+      },
+    };
 
-      let resolved = false;
-      const pending = game.submitHumanExchange(giveMahjongToSeat1(game)).then((r) => {
-        resolved = true;
-        return r;
-      });
+    const game = new SoloGame({ session: stubSession(), awaitAdvance: gate.wait, deck: deckWithHumanMahjongFirst() });
+    game.decideHumanLargeTichu(false);
 
-      // Flush microtasks (the stub model's async inference) without advancing
-      // real/fake time -- seat 1's forced turn should complete but then be
-      // blocked on its post-turn sleep(2000), so the overall call must not
-      // have resolved yet.
-      await vi.advanceTimersByTimeAsync(0);
-      expect(resolved).toBe(false);
+    let resolved = false;
+    const pending = game.submitHumanExchange(giveMahjongToSeat1(game)).then((r) => {
+      resolved = true;
+      return r;
+    });
 
-      await vi.advanceTimersByTimeAsync(10_000); // generously drain every remaining per-turn delay
-      const result = await pending;
+    // Seat 1's forced turn should be blocked on the gate, not resolved yet.
+    await vi.waitFor(() => expect(gate.isWaiting).toBe(true));
+    expect(resolved).toBe(false);
 
-      expect(resolved).toBe(true);
-      expect(result.ok).toBe(true);
-    } finally {
-      vi.useRealTimers();
+    // Release the gate for however many AI turns are needed until it's the
+    // human's turn again -- waiting for either the gate to re-arm (another AI
+    // turn follows) or the whole call to resolve (it was the last one).
+    while (!resolved) {
+      gate.release();
+      await vi.waitFor(() => expect(gate.isWaiting || resolved).toBe(true));
     }
+
+    const result = await pending;
+    expect(result.ok).toBe(true);
   });
 });
 

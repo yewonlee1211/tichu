@@ -46,16 +46,19 @@ export interface SoloGameOptions {
    * human's own) invisible, which broke anything trying to announce "who
    * just did what" (it could only ever see the *last* mover in the batch). */
   readonly onTurnResolved?: (state: GameState) => void;
-  /** Milliseconds to pause after each AI turn before continuing, so a human
-   * viewer can actually follow the sequence instead of it resolving
-   * instantly. Defaults to 0 (no delay) -- the real app passes 2000; tests
-   * leave this unset to stay fast. */
-  readonly aiTurnDelayMs?: number;
+  /** Awaited before each individual AI turn while draining a sequence of
+   * them -- lets a caller pace AI turns however it likes (the real app waits
+   * for the player to tap the screen, see `SoloGamePage.tsx`) instead of
+   * them resolving all at once. Left undefined (the default, and what every
+   * test other than the pacing tests below uses) means no pacing at all: AI
+   * turns drain back-to-back with no gap. */
+  readonly awaitAdvance?: () => Promise<void>;
   /** Called the moment an exchange resolves, before any of the AI seats'
    * subsequent trick-play turns run. `submitHumanExchange`'s own returned
-   * promise only resolves once every AI turn (and its `aiTurnDelayMs` pause)
-   * has drained, which is too late for anything that should appear right
-   * after the exchange itself -- e.g. a "here's what you were given" toast. */
+   * promise only resolves once every AI turn (and whatever `awaitAdvance`
+   * gate it waited on) has drained, which is too late for anything that
+   * should appear right after the exchange itself -- e.g. a "here's what
+   * you were given" toast. */
   readonly onExchangeReceived?: (received: Record<number, Card>) => void;
   /** Resume a previously in-progress game (e.g. restoring after a page
    * refresh) instead of dealing a fresh round. When set, `deck` is ignored
@@ -66,10 +69,6 @@ export interface SoloGameOptions {
     readonly cumulativeScores: readonly [number, number];
     readonly roundHistory?: readonly (readonly [number, number])[];
   };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function mustOk<T>(result: Result<T, string>): T {
@@ -144,14 +143,14 @@ export class SoloGame {
    * `scoreRoundIfNeeded`. Reset to `false` every time a fresh round is dealt. */
   private roundScored = false;
   private readonly onTurnResolved: ((state: GameState) => void) | undefined;
-  private readonly aiTurnDelayMs: number;
+  private readonly awaitAdvance: (() => Promise<void>) | undefined;
   private readonly onExchangeReceived: ((received: Record<number, Card>) => void) | undefined;
 
   constructor(options: SoloGameOptions) {
     this.session = options.session;
     this.strategy = options.strategy;
     this.onTurnResolved = options.onTurnResolved;
-    this.aiTurnDelayMs = options.aiTurnDelayMs ?? 0;
+    this.awaitAdvance = options.awaitAdvance;
     this.onExchangeReceived = options.onExchangeReceived;
     if (options.resumeFrom !== undefined) {
       this.state = options.resumeFrom.state;
@@ -267,9 +266,9 @@ export class SoloGame {
 
   private async advanceAiTurns(): Promise<void> {
     while (this.state.phase === Phase.Playing && AI_SEATS.includes(this.state.currentPlayer)) {
+      if (this.awaitAdvance !== undefined) await this.awaitAdvance();
       await this.playOneAiTurn();
       this.onTurnResolved?.(this.state);
-      if (this.aiTurnDelayMs > 0) await sleep(this.aiTurnDelayMs);
     }
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { InferenceSession } from 'onnxruntime-common';
 import { type Card, type Combo, type GameState, Phase, type Rank, type Result } from '@tichu/shared';
 import { HUMAN_SEAT, SoloGame } from '../ai/soloGame';
@@ -7,7 +7,12 @@ import { fromSoloGameState } from '../table/TableViewModel';
 import { GameTable } from '../table/GameTable';
 import { ExchangeResultToast } from '../table/ExchangeResultToast';
 
-const AI_TURN_DELAY_MS = 2000;
+/** Minimum gap between two AI turns actually advancing, regardless of how
+ * fast the player taps the screen -- guards against a rapid double-tap (or
+ * panic-tapping) firing two `advanceOneAiTurn` steps close enough together
+ * to race the shared onnxruntime-web session (it rejects a `run()` call that
+ * arrives while a previous one is still in flight). */
+const AI_TAP_COOLDOWN_MS = 500;
 
 export interface SoloGamePageProps {
   readonly session: InferenceSession;
@@ -18,7 +23,10 @@ export interface SoloGamePageProps {
  * multiplayer uses, via the `fromSoloGameState` adapter. Every `human*`
  * method on `SoloGame` already drains all AI turns before resolving (see
  * its class doc comment), so this never needs to poll or wait separately
- * for AI moves -- `busy` only covers the single await itself. */
+ * for AI moves -- `busy` only covers the single await itself. Each
+ * individual AI turn is paced by `awaitAdvance` (below): rather than a fixed
+ * delay, it waits for the player to tap anywhere on the screen, so the
+ * player controls how fast opponent turns play out. */
 export function SoloGamePage({ session, onExit }: SoloGamePageProps) {
   // SoloGame needs onTurnResolved/onExchangeReceived callbacks to report
   // things as they happen, but those callbacks are `setState`/
@@ -30,6 +38,40 @@ export function SoloGamePage({ session, onExit }: SoloGamePageProps) {
   const setStateRef = useRef<(state: GameState) => void>(() => {});
   const setExchangeToastRef = useRef<(received: Record<number, Card>) => void>(() => {});
 
+  // The tap-to-advance gate: while an AI turn is waiting to proceed,
+  // `pendingAdvanceResolveRef.current` holds that wait's resolver; a screen
+  // tap (see `handleTapToAdvance`) calls it exactly once to release it. Null
+  // whenever nothing is actually waiting (the human's own turn, or between
+  // waits), so an unrelated tap elsewhere in the UI is always a harmless
+  // no-op.
+  const pendingAdvanceResolveRef = useRef<(() => void) | null>(null);
+  const lastAdvanceAtRef = useRef(0);
+
+  function awaitAdvance(): Promise<void> {
+    return new Promise((resolve) => {
+      pendingAdvanceResolveRef.current = resolve;
+    });
+  }
+
+  /** Bound to the whole page so any tap advances a waiting AI turn -- except
+   * a tap that lands on an actual control (a button, in practice every
+   * interactive element this page renders). Without that exclusion, the
+   * human's own submit/pass/etc. click bubbles up to this same handler (click
+   * events bubble through the DOM to their ancestors) and, since
+   * `advanceAiTurns` has by then already synchronously armed the gate for
+   * whichever AI seat goes next, immediately releases it too -- collapsing
+   * the intended gap between the human's action and the next AI's to zero. */
+  function handleTapToAdvance(event: MouseEvent<HTMLDivElement>): void {
+    if (event.target instanceof Element && event.target.closest('button, a, select, input')) return;
+    const resolve = pendingAdvanceResolveRef.current;
+    if (resolve === null) return;
+    const now = Date.now();
+    if (now - lastAdvanceAtRef.current < AI_TAP_COOLDOWN_MS) return;
+    lastAdvanceAtRef.current = now;
+    pendingAdvanceResolveRef.current = null;
+    resolve();
+  }
+
   // Held in state (not a ref) so reading its methods during render -- for
   // `legalCombos`, `cumulativeScores`, `matchOver` below -- is a plain value
   // read rather than a `.current` ref access; the setter is never called,
@@ -38,12 +80,12 @@ export function SoloGamePage({ session, onExit }: SoloGamePageProps) {
     () =>
       new SoloGame({
         session,
-        aiTurnDelayMs: AI_TURN_DELAY_MS,
+        awaitAdvance,
         onTurnResolved: (nextState) => setStateRef.current(nextState),
         // Fires the moment the exchange resolves -- if this instead waited
         // for submitHumanExchange's own promise (as it used to), the toast
         // wouldn't appear until every subsequent AI trick-play turn (each
-        // with its own aiTurnDelayMs pause) had also finished.
+        // waiting on its own screen tap) had also finished.
         onExchangeReceived: (received) => setExchangeToastRef.current(received),
         // Resumes an in-progress game after e.g. a page refresh -- App.tsx
         // only decides *whether* to route here based on a snapshot existing
@@ -120,7 +162,7 @@ export function SoloGamePage({ session, onExit }: SoloGamePageProps) {
   }
 
   return (
-    <div className="solo-game-page">
+    <div className="solo-game-page" onClick={handleTapToAdvance}>
       {exchangeToast !== null && (
         <ExchangeResultToast received={exchangeToast} seatNames={vm.seatNames} onDismiss={() => setExchangeToast(null)} />
       )}

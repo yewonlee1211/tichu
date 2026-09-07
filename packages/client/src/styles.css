@@ -465,11 +465,18 @@ button.card:hover:not(:disabled) {
 
 /* ---- exchange / pickers ---- */
 
-.exchange__slots {
+.exchange__hand-item {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin: 0.75rem 0;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.exchange__gift-label {
+  font-size: 0.75rem;
+  color: var(--color-gold-bright);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .flow-picker {

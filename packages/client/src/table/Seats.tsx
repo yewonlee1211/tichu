@@ -67,13 +67,7 @@ export function Seats({
         );
       })}
       <div className="seats__center">
-        {announcement !== null && (
-          <ActionAnnouncementBanner
-            seatName={seatNames[announcement.seat] ?? `좌석 ${announcement.seat}`}
-            cards={announcement.cards}
-            label={announcement.label}
-          />
-        )}
+        {announcement !== null && <ActionAnnouncementBanner announcement={announcement} seatNames={seatNames} />}
       </div>
     </div>
   );

@@ -134,7 +134,7 @@ describe('Seats', () => {
         tichuCalls={[false, false, false, false]}
         largeTichuCalls={[null, null, null, null]}
         finishedOrder={[]}
-        announcement={{ seat: 1, cards: [], label: '패스' }}
+        announcement={{ kind: 'play', seat: 1, cards: [], label: '개' }}
       />,
     );
 
@@ -142,6 +142,25 @@ describe('Seats', () => {
     expect(center).not.toBeNull();
     const banner = center!.querySelector('.action-announcement');
     expect(banner).toHaveTextContent('AI 1');
-    expect(banner).toHaveTextContent('패스');
+    expect(banner).toHaveTextContent('개');
+  });
+
+  it('renders a trickWon announcement as "<winner> 님이 트릭 획득" / "<next> 님의 차례"', () => {
+    const { container } = render(
+      <Seats
+        seatNames={seatNames}
+        viewerSeat={0}
+        currentPlayer={1}
+        handSizes={[10, 11, 12, 13]}
+        tichuCalls={[false, false, false, false]}
+        largeTichuCalls={[null, null, null, null]}
+        finishedOrder={[]}
+        announcement={{ kind: 'trickWon', winnerSeat: 0, nextSeat: 1 }}
+      />,
+    );
+
+    const banner = container.querySelector('.seats__center .action-announcement');
+    expect(banner).toHaveTextContent('나 님이 트릭 획득');
+    expect(banner).toHaveTextContent('AI 1 님의 차례');
   });
 });
