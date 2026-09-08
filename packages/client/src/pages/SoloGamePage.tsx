@@ -184,7 +184,7 @@ export function SoloGamePage({ session, onExit }: SoloGamePageProps) {
         }
         onPass={(dragonRecipient: number | null) => void runBusy(() => game.humanPassTurn(dragonRecipient))}
       />
-      <button type="button" onClick={handleExit}>
+      <button type="button" className="solo-game-page__exit" onClick={handleExit}>
         나가기
       </button>
     </div>

@@ -140,6 +140,16 @@ label {
   align-items: stretch;
 }
 
+.solo-game-page {
+  position: relative;
+}
+
+.solo-game-page__exit {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
 .game-table__error,
 .join-form__error,
 .waiting-room__error {
