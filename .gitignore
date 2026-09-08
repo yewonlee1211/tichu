@@ -17,6 +17,10 @@ ai/export/.env
 # scaffold state that's local-only until Phase 2 decides the real schema
 packages/server/.env
 
+# Client production build-time env (see packages/client/.env.production.example) --
+# deployment-specific (model bucket origin, server WS URL), not committed
+packages/client/.env.production
+
 # AI model assets deployed to the client (regenerated via ai/export/export_onnx.py;
 # see ai/export/.env.example and packages/client/public/models/README.md)
 packages/client/public/models/*.onnx.enc

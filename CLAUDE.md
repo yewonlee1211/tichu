@@ -67,6 +67,21 @@ To (re)generate:
 
 For an actual deployment (not local dev), a further step uploads that same bundle to S3: `docker compose exec ai python -m export.deploy_s3` (see `ai/export/README.md` for the bucket policy/CORS/IAM setup this requires). The client then needs `VITE_MODEL_BASE_URL` (see `packages/client/src/vite-env.d.ts`) set to that bucket's origin at build time — same build-time-env-var mechanism as `VITE_WS_URL` above. Unset (local dev, E2E), `packages/client/src/ai/modelCache.ts` keeps fetching the same-origin `/models/...` paths described above.
 
+## Client static deployment (S3 + CloudFront)
+
+`packages/client`'s production build is hosted as a static site on S3 + CloudFront (bucket locked down via Origin Access Control, no direct public S3 access). `packages/server` has no public deployment yet, so this only covers the frontend — see the `2026-09-09-m1-client-deploy` session for the setup history and rationale.
+
+- Bucket: `tichu-client-737213639049-ap-southeast-2-an` (`ap-southeast-2`)
+- CloudFront distribution: `E101LMR0OATAZ4` (`https://d3eaqeztt5cahh.cloudfront.net`)
+- Deploy IAM user: `tichu-frontend-deploy` — scoped to only this bucket (by name prefix) and CloudFront management/invalidation, deliberately separate from the model-upload and RDS-related IAM users so a leaked/misused credential from one pipeline can't touch the others.
+
+To (re)deploy after a client code change:
+
+1. Update `packages/client/.env.production` (gitignored; copy from `.env.production.example`) if `VITE_MODEL_BASE_URL`/`VITE_WS_URL` need to change — both are baked in at build time, so a value change requires rebuilding, not just re-uploading the existing `dist/`.
+2. `node packages/client/deploy.mjs` (uses the `tichu-frontend-deploy` AWS CLI profile by default; pass `--profile <name>` to override). This rebuilds, strips the `public/models/*` files Vite copies into `dist/` (unused in production since the model is fetched from `VITE_MODEL_BASE_URL` instead — leaving them in would just upload a stale/duplicate model checkpoint no code path reads), gzip-compresses the ONNX runtime's WASM binary in place before upload (uncompressed it's ~26MB, over CloudFront's 10MB automatic-compression limit, so this is done client-side at deploy time with an explicit `Content-Encoding: gzip` header instead), uploads to S3 with per-file-type cache headers (`index.html` short-cached, hashed `assets/*` long-cached/immutable), and invalidates CloudFront's cached `index.html`.
+
+Known limitation: multiplayer mode has nothing to connect to until `packages/server` gets a public deployment (a separate, not-yet-started session) — only solo-AI mode is expected to work against this deployed client today.
+
 ## Mixed rooms (human + AI in the same room) — explicit future extension point
 
 Out of MVP scope, but two places are already structured for it rather than needing a rewrite:
