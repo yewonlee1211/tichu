@@ -13,21 +13,13 @@ afterEach(() => {
 });
 
 describe('App navigation', () => {
-  it('starts on the home screen with both entry points', () => {
+  // MVP ships solo-only -- the multiplayer entry point is deliberately hidden
+  // from the home screen for now (App.tsx's 'multiplayer' screen/route and
+  // MultiplayerPage itself are untouched, just unreachable via this button).
+  it('starts on the home screen with only the solo entry point', () => {
     render(<App />);
-    expect(screen.getByRole('button', { name: '사람과 플레이' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '사람과 플레이' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'AI와 연습하기' })).toBeInTheDocument();
-  });
-
-  it('navigates to the multiplayer join form and back home', async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.click(screen.getByRole('button', { name: '사람과 플레이' }));
-    expect(screen.getByLabelText('이름')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: '홈으로' }));
-    expect(screen.getByRole('button', { name: '사람과 플레이' })).toBeInTheDocument();
   });
 
   it('navigates to the solo entry (AI model loading) screen', async () => {
@@ -45,6 +37,6 @@ describe('App navigation', () => {
     render(<App />);
 
     expect(screen.getByText(/AI 모델을 내려받는 중입니다/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '사람과 플레이' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'AI와 연습하기' })).not.toBeInTheDocument();
   });
 });
