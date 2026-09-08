@@ -575,9 +575,32 @@ def test_trick_resolves_to_winner_after_all_others_pass():
 
     assert state.collected_tricks[0] == (card(Rank.FIVE),)
     # Player 0 won the trick with their last card and is already out, so the
-    # lead falls to their partner (seat 2) instead.
-    assert state.trick_leader == 2
+    # lead falls to the next active seat in turn order (seat 1) -- not their
+    # partner (seat 2), which is only the Dog card's own rule. See RULES.md
+    # 5.10 and test_trick_winner_finished_falls_back_to_turn_order_not_partner
+    # below for a case where these two rules would actually disagree.
+    assert state.trick_leader == 1
     assert state.current_best is None
+
+
+def test_trick_winner_finished_falls_back_to_turn_order_not_partner():
+    # Distinguishes the fix from a coincidence: seat 3 (not the winner's
+    # partner) is already out here, so the old (buggy) logic would still
+    # have handed the lead to the winner's partner (seat 2, via
+    # `_next_leader_after_dog`, since seat 2 itself hasn't finished). The
+    # corrected fallback starts from the winner (seat 0) directly and skips
+    # only actually-finished seats, landing on seat 1.
+    state = make_playing_state(
+        {0: [card(Rank.FIVE)], 1: [], 2: [], 3: []},
+        current_player=0,
+        trick_leader=0,
+        finished_order=(3,),
+    )
+    state = play_combo(state, 0, [card(Rank.FIVE)])
+    state = pass_turn(state, 1)
+    state = pass_turn(state, 2)
+
+    assert state.trick_leader == 1
 
 
 def test_dragon_win_requires_choosing_an_opponent():

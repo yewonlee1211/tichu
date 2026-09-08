@@ -348,9 +348,12 @@ def pass_turn(state: GameState, player: int, dragon_recipient: int | None = None
     collected[recipient] = collected[recipient] + state.trick_cards
 
     if winner in state.finished_order:
-        # Same fallback as the Dog: partner first, else nearest active player
-        # going counter-clockwise.
-        next_leader = _next_leader_after_dog(winner, state.finished_order)
+        # Unlike the Dog (which always hands the lead to the winner's
+        # partner -- see `_next_leader_after_dog`), a trick winner who simply
+        # went out on their winning play passes the lead to whoever is next
+        # in normal turn order -- see RULES.md's 5.6/5.10 sections for why
+        # these two cases were wrongly conflated for a while.
+        next_leader = _next_active_player(winner, state.finished_order)
     else:
         next_leader = winner
 

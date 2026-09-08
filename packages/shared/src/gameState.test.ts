@@ -367,6 +367,45 @@ describe('passTurn', () => {
 
     expect(passTurn(state, 3, 2).ok).toBe(false);
   });
+
+  it('hands the lead to the next active seat in turn order -- not the winner\'s partner -- when the trick winner went out on their winning play', () => {
+    // Bug: this fallback used to reuse `nextLeaderAfterDog` (partner first),
+    // conflating the Dog's own distinct "always hands the lead to your
+    // partner" rule with the unrelated case of a trick winner simply running
+    // out of cards. Per the corrected `ai/RULES.md` (5.10), a finished trick
+    // winner is skipped just like any other finished seat -- the lead goes to
+    // whoever is next in seat order, not necessarily the winner's partner.
+    const state0 = makePlayingState({ 0: [card(Rank.Five)] }, { currentPlayer: 0, trickLeader: 0 });
+    let state = expectOk(playCombo(state0, 0, [card(Rank.Five)]));
+    state = expectOk(passTurn(state, 1));
+    state = expectOk(passTurn(state, 2));
+    state = expectOk(passTurn(state, 3));
+
+    expect(state.collectedTricks[0]).toEqual([card(Rank.Five)]);
+    // Seat 0 (the winner) is already out; seat 2 is their partner but is NOT
+    // next in turn order -- seat 1 is, and nobody else has finished, so the
+    // lead goes to seat 1.
+    expect(state.trickLeader).toBe(1);
+    expect(state.currentPlayer).toBe(1);
+  });
+
+  it("falls back to the winner's own next-in-order successor, not their partner, even when someone else had already finished before this trick", () => {
+    // Distinguishes the fix from a coincidence: seat 3 (not the winner's
+    // partner) is already out here, so the old (buggy) logic would still
+    // have handed the lead to the winner's partner (seat 2, via
+    // `nextLeaderAfterDog`, since seat 2 itself hasn't finished). The
+    // corrected fallback starts from the winner (seat 0) directly and skips
+    // only actually-finished seats, landing on seat 1.
+    const state0 = makePlayingState(
+      { 0: [card(Rank.Five)], 3: [] },
+      { currentPlayer: 0, trickLeader: 0, finishedOrder: [3] },
+    );
+    let state = expectOk(playCombo(state0, 0, [card(Rank.Five)]));
+    state = expectOk(passTurn(state, 1));
+    state = expectOk(passTurn(state, 2));
+
+    expect(state.trickLeader).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -376,7 +376,12 @@ export function passTurn(
   const collected = [...state.collectedTricks];
   collected[recipient] = [...collected[recipient]!, ...state.trickCards];
 
-  const nextLeader = state.finishedOrder.includes(winner) ? nextLeaderAfterDog(winner, state.finishedOrder) : winner;
+  // Unlike the Dog (which always hands the lead to the winner's partner --
+  // see `nextLeaderAfterDog`), a trick winner who simply went out on their
+  // winning play passes the lead to whoever is next in normal turn order --
+  // see `ai/RULES.md`'s 5.6/5.10 sections for why these two cases were
+  // wrongly conflated for a while.
+  const nextLeader = state.finishedOrder.includes(winner) ? nextActivePlayer(winner, state.finishedOrder) : winner;
 
   return ok({
     ...state,
