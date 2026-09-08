@@ -26,13 +26,21 @@ const DEFAULT_PROFILE = 'tichu-frontend-deploy';
 const profileFlagIndex = process.argv.indexOf('--profile');
 const profile = profileFlagIndex !== -1 ? process.argv[profileFlagIndex + 1] : DEFAULT_PROFILE;
 
-function run(cmd, args) {
+function run(cmd, args, { shell = true } = {}) {
   console.log(`$ ${cmd} ${args.join(' ')}`);
-  execFileSync(cmd, args, { stdio: 'inherit', shell: true });
+  execFileSync(cmd, args, { stdio: 'inherit', shell });
 }
 
+// `shell: false` here: with `shell: true` on Windows, Node joins `args` with a
+// naive space-join before handing the line to cmd.exe, instead of quoting each
+// argv element -- any value containing its own spaces (e.g. the `Cache-Control`
+// header values below, `'no-cache, must-revalidate'`) silently splits into
+// multiple argv tokens, which aws.exe then rejects as unknown options. aws.exe
+// is a real executable (not a .cmd shim needing cmd.exe to interpret it,
+// unlike `pnpm` in the build step above), so spawning it directly lets Node's
+// own Windows argv-escaping quote each element correctly.
 function aws(args) {
-  run('aws', [...args, '--profile', profile]);
+  run('aws', [...args, '--profile', profile], { shell: false });
 }
 
 console.log('1) 클라이언트 빌드 (packages/client/.env.production 값 반영)');
