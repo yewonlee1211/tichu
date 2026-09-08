@@ -377,6 +377,47 @@ describe('SoloGame: Large Tichu and exchange', () => {
 
     expect(receivedAt).toBe('received');
   });
+
+  it('reports the Exchange -> Playing transition itself via onTurnResolved, before the first AI turn plays anything -- otherwise a caller can never tell an AI led the very first trick of the round', async () => {
+    // Bug: when an AI seat (not the human) held the Mahjong and led the
+    // first trick right after the exchange, `submitHumanExchange` jumped
+    // straight from "Exchange" to "Playing, with that AI's card already
+    // played" in a single reported state -- there was no intermediate
+    // "Playing, nobody has played yet" state for `useActionAnnouncement.ts`'s
+    // diff (which requires both sides of a comparison to already be
+    // Phase.Playing) to detect the play against. The leading play never got
+    // announced, and the center display stayed blank until someone's next
+    // real play (not just a pass) happened to reset the baseline.
+    const deck = [...createDeck()];
+    const mahjongIndex = deck.findIndex((c) => c.rank === Rank.Mahjong);
+    const [mahjong] = deck.splice(mahjongIndex, 1);
+    deck.unshift(mahjong!);
+
+    const states: GameState[] = [];
+    const game = new SoloGame({
+      session: stubSession(),
+      deck,
+      // Never resolves -- freezes the game right after the exchange
+      // resolves, before seat 1's own leading play actually runs, so the
+      // in-between moment can be inspected directly.
+      awaitAdvance: () => new Promise<void>(() => {}),
+      onTurnResolved: (s) => states.push(s),
+    });
+    game.decideHumanLargeTichu(false);
+
+    const hand = game.getState().hands[HUMAN_SEAT]!;
+    const mahjongCard = hand.find((c) => c.rank === Rank.Mahjong)!;
+    const others = hand.filter((c) => c.rank !== Rank.Mahjong).sort((a, b) => a.rank - b.rank);
+
+    void game.submitHumanExchange({ 1: mahjongCard, 2: others[0]!, 3: others[1]! });
+
+    const preLeadState = game.getState();
+    expect(preLeadState.phase).toBe(Phase.Playing);
+    expect(preLeadState.currentBest).toBeNull();
+    expect(preLeadState.currentPlayer).toBe(1);
+
+    expect(states).toEqual([preLeadState]);
+  });
 });
 
 describe('SoloGame: AI turn pacing', () => {

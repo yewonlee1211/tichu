@@ -334,6 +334,19 @@ export class SoloGame {
     this.onExchangeReceived?.(received);
     this.pendingAiGifts = null;
     this.state = result.value;
+    // Report the Exchange -> Playing transition itself, *before* draining AI
+    // turns below -- same reasoning as `humanPlayCombo`/`humanPassTurn`
+    // reporting the human's own action first. Without this, whenever an AI
+    // (not the human) holds the Mahjong and leads the first trick,
+    // `advanceAiTurns` would report that AI's leading play as the *first*
+    // state a caller ever observes after the Exchange phase -- jumping
+    // straight from "Exchange" to "Playing, with a card already played" in
+    // one update. `useActionAnnouncement.ts`'s diff requires both the
+    // previous and next state to already be `Phase.Playing` to detect a
+    // play, so it silently drops that leading play (and the "what's
+    // currently in the center" display never recovers until someone's next
+    // real play, not just a pass, resets the baseline).
+    this.onTurnResolved?.(this.state);
     await this.advanceAiTurns();
     return ok(this.state);
   }

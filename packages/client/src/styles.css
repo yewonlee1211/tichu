@@ -280,7 +280,10 @@ label {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 9rem;
+  /* Tall enough that `.action-announcement` (vertically centered) and
+     `.seats__pass-note` (anchored to the bottom edge, see below) have real
+     vertical separation between them, both while staying inside the circle. */
+  min-height: 13rem;
   border-radius: 50%;
   background: radial-gradient(ellipse at center, var(--color-felt-light), var(--color-felt) 75%);
 }
@@ -331,14 +334,18 @@ label {
   color: var(--color-ink-dim);
 }
 
-/* Sits just below the felt circle (not inside it, unlike `.action-announcement`
-   itself) so it never competes for space with the banner's own content. */
+/* Anchored partway toward the bottom of `.seats__center`'s own box (inside
+   the felt circle, unlike an earlier version of this rule that put it just
+   below the circle -- that spilled into the bottom seat panel). `bottom` is a
+   fixed distance up from the box's own bottom edge, not the edge itself, so
+   there's real vertical separation from `.action-announcement` (centered in
+   the same box) without relying on z-index. */
 .seats__pass-note {
   position: absolute;
-  top: 100%;
+  bottom: 1rem;
   left: 50%;
   transform: translateX(-50%);
-  margin: 0.4rem 0 0;
+  margin: 0;
   font-size: 0.85rem;
   color: var(--color-ink-dim);
   white-space: nowrap;
