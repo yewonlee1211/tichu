@@ -26,6 +26,7 @@ function baseVm(overrides: Partial<TableViewModel>): TableViewModel {
     mahjongWish: null,
     passesInARow: 0,
     seatNames,
+    dragonRecipientPreDecided: false,
     ...overrides,
   };
 }

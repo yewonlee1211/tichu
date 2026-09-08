@@ -33,6 +33,11 @@ export interface TableViewModel {
    * in `legalPlay.ts`. */
   readonly passesInARow: number;
   readonly seatNames: readonly string[];
+  /** See `usePlayFlow.ts`'s `UsePlayFlowArgs.dragonRecipientPreDecided` doc
+   * comment -- `false` for multiplayer (`fromPlayerView`), always `true` for
+   * solo-AI (`fromSoloGameState`, since `SoloGame` always captures the
+   * decision the instant a Dragon single is played). */
+  readonly dragonRecipientPreDecided: boolean;
 }
 
 const DEFAULT_SEAT_NAMES: readonly string[] = ['나', '상대 1', '상대 2', '상대 3'];
@@ -56,6 +61,7 @@ export function fromPlayerView(view: PlayerView, seatNames: readonly string[] = 
     mahjongWish: view.mahjongWish,
     passesInARow: view.passesInARow,
     seatNames,
+    dragonRecipientPreDecided: false,
   };
 }
 
@@ -83,5 +89,6 @@ export function fromSoloGameState(state: GameState, humanSeat: number): TableVie
     mahjongWish: state.mahjongWish,
     passesInARow: state.passesInARow,
     seatNames: SOLO_SEAT_NAMES,
+    dragonRecipientPreDecided: true,
   };
 }

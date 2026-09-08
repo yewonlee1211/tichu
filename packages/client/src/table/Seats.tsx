@@ -16,6 +16,9 @@ export interface SeatsProps {
   /** Rendered over the table's center circle, not the viewport -- see
    * `useActionAnnouncement`. */
   readonly announcement: ActionAnnouncement | null;
+  /** Shown as a small note below `announcement` -- see
+   * `useActionAnnouncement`'s `lastPassSeat` doc comment. */
+  readonly lastPassSeat: number | null;
 }
 
 type Position = 'bottom' | 'right' | 'top' | 'left';
@@ -36,6 +39,7 @@ export function Seats({
   largeTichuCalls,
   finishedOrder,
   announcement,
+  lastPassSeat,
 }: SeatsProps) {
   const partnerSeat = PARTNER[viewerSeat];
 
@@ -68,6 +72,7 @@ export function Seats({
       })}
       <div className="seats__center">
         {announcement !== null && <ActionAnnouncementBanner announcement={announcement} seatNames={seatNames} />}
+        {lastPassSeat !== null && <p className="seats__pass-note">{seatNames[lastPassSeat] ?? `좌석 ${lastPassSeat}`} 님이 패스</p>}
       </div>
     </div>
   );

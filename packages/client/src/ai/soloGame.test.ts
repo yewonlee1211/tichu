@@ -608,3 +608,98 @@ describe('SoloGame: human trick play validation', () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe('SoloGame: a Dragon trick recipient is decided by whoever actually won it, not whoever\'s pass happens to close it', () => {
+  // Bug: `playCombo`'s `dragonRecipient` argument is only actually applied
+  // by the shared reducer when that very play also ends the round (see
+  // `resolveTrickRecipient` in packages/shared/src/gameState.ts) -- for the
+  // far more common case where the trick stays open, the decision used to
+  // just be silently discarded, and whoever's *pass* later closed the trick
+  // either got auto-decided for (soloGame.ts's old `autoDragonRecipient` at
+  // close time) or wrongly prompted (usePlayFlow.ts) instead of the real
+  // winner. These two tests cover both directions.
+  const baseState = (overrides: Partial<GameState>): GameState => ({
+    hands: [[], [], [], []],
+    pendingFinalCards: [[], [], [], []],
+    phase: Phase.Playing,
+    currentPlayer: 0,
+    trickLeader: 0,
+    trickCards: [],
+    currentBest: null,
+    currentStrength: 0,
+    lastPlayerToAct: null,
+    passesInARow: 0,
+    finishedOrder: [],
+    collectedTricks: [[], [], [], []],
+    largeTichuCalls: [false, false, false, false],
+    tichuCalls: [false, false, false, false],
+    mahjongWish: null,
+    ...overrides,
+  });
+
+  it('the human\'s own choice survives to the actual close, even though an AI pass is what closes it', async () => {
+    const dragon: Card = { rank: Rank.Dragon, suit: Suit.Special };
+    const nine: Card = { rank: Rank.Nine, suit: Suit.Sword };
+    const base = baseState({
+      currentPlayer: 3,
+      trickLeader: 3,
+      hands: [
+        [dragon, { rank: Rank.Three, suit: Suit.Sword }],
+        [{ rank: Rank.Five, suit: Suit.Sword }],
+        [{ rank: Rank.Six, suit: Suit.Sword }],
+        [nine, { rank: Rank.King, suit: Suit.Sword }],
+      ],
+    });
+    const afterLead = mustOkValue(playCombo(base, 3, [nine]));
+    const game = new SoloGame({ session: stubSession(), resumeFrom: { state: afterLead, cumulativeScores: [0, 0] } });
+
+    // Seat 3 excluded (self) and seat 1 (its partner) from the human's
+    // recipient options -- the human deliberately picks seat 3 here because
+    // it's *different* from what the old auto-decide fallback would have
+    // picked (seat 1, the first eligible seat in ascending order), so a
+    // regression back to that fallback is unambiguously observable below.
+    const result = await game.humanPlayCombo([dragon], null, 3);
+
+    expect(result.ok).toBe(true);
+    const finalState = game.getState();
+    expect(finalState.currentPlayer).toBe(HUMAN_SEAT);
+    // Seat 3 (the human's actual choice) got the trick...
+    expect(finalState.collectedTricks[3]).toEqual([nine, dragon]);
+    // ...not seat 1, which is what the old close-time auto-decide fallback
+    // would have produced regardless of what the human chose.
+    expect(finalState.collectedTricks[1]).toEqual([]);
+  });
+
+  it('an AI\'s own auto-decided choice survives to the actual close, even when the human\'s pass closes it -- and the human\'s own (wrong) argument is ignored', async () => {
+    const dragon: Card = { rank: Rank.Dragon, suit: Suit.Special };
+    const base = baseState({
+      currentPlayer: 1,
+      trickLeader: 1,
+      hands: [
+        [{ rank: Rank.Ten, suit: Suit.Sword }],
+        [dragon],
+        [{ rank: Rank.Five, suit: Suit.Sword }],
+        [{ rank: Rank.Six, suit: Suit.Sword }],
+      ],
+    });
+    const game = new SoloGame({ session: stubSession(), resumeFrom: { state: base, cumulativeScores: [0, 0] } });
+
+    // Seat 1's only card is the Dragon -- it's their only legal opening
+    // move, so the stub session (always picks candidate index 0) is
+    // guaranteed to pick it. Winner is seat 1; auto-decide (first eligible
+    // seat, excluding self and partner seat 3) lands on seat 0 -- the human.
+    await game.resumePendingAiTurnIfNeeded();
+    expect(game.getState().currentPlayer).toBe(HUMAN_SEAT);
+    expect(game.getState().currentBest).not.toBeNull();
+
+    // The human's own pass closes the trick. Deliberately pass a *different*
+    // seat (2) as the argument -- if the engine wrongly used this argument
+    // instead of the cached decision, the assertions below would catch it.
+    const result = await game.humanPassTurn(2);
+
+    expect(result.ok).toBe(true);
+    const finalState = game.getState();
+    expect(finalState.collectedTricks[0]).toEqual([dragon]);
+    expect(finalState.collectedTricks[2]).toEqual([]);
+  });
+});

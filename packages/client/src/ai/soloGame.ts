@@ -82,6 +82,10 @@ function isDragonSingle(combo: Combo | null): boolean {
   return combo !== null && combo.comboType === ComboType.Single && combo.cards[0]?.rank === Rank.Dragon;
 }
 
+function isDragonCards(cards: readonly Card[]): boolean {
+  return cards.length === 1 && cards[0]?.rank === Rank.Dragon;
+}
+
 function isDragonWinPending(state: GameState): boolean {
   return isDragonSingle(state.currentBest);
 }
@@ -145,6 +149,17 @@ export class SoloGame {
   private readonly onTurnResolved: ((state: GameState) => void) | undefined;
   private readonly awaitAdvance: (() => Promise<void>) | undefined;
   private readonly onExchangeReceived: ((received: Record<number, Card>) => void) | undefined;
+  /** Who a currently-open Dragon-won trick will go to, decided by whoever
+   * played the Dragon at the moment they played it -- not by whoever's pass
+   * eventually closes the trick (that's frequently a different seat, and
+   * `playCombo`'s own `dragonRecipient` argument is silently discarded
+   * unless that very play also ends the round -- see `resolveTrickRecipient`
+   * in `packages/shared/src/gameState.ts`). Cached here so the later closing
+   * `passTurn` call can reapply the real decision instead of re-deciding (or
+   * re-asking the wrong player) at that point. Cleared once the trick
+   * actually closes, or overwritten the instant a new Dragon single is
+   * played. */
+  private pendingDragonRecipient: number | null = null;
 
   constructor(options: SoloGameOptions) {
     this.session = options.session;
@@ -162,6 +177,15 @@ export class SoloGame {
       // snapshot-saving effect in `SoloGamePage`). Re-scoring here would
       // double-count it.
       this.roundScored = this.state.phase === Phase.RoundOver;
+      // Resuming mid-Dragon-trick loses the original decider's actual choice
+      // (only `GameState` is persisted, not this class's private fields) --
+      // fall back to the same fixed rule AI seats use rather than leaving it
+      // unset. A narrow edge case (refreshing in the split second between
+      // playing the Dragon and the trick actually closing), not worth a
+      // dedicated snapshot field for.
+      if (isDragonWinPending(this.state)) {
+        this.pendingDragonRecipient = autoDragonRecipient(this.state, this.state.lastPlayerToAct!);
+      }
       this.computeAiGiftsIfNeeded();
     } else {
       this.state = dealNewRound(options.deck);
@@ -252,8 +276,13 @@ export class SoloGame {
     const chosen = candidates[chosenIndex]!.combo;
 
     if (chosen === null) {
-      const recipient = isDragonWinPending(this.state) ? autoDragonRecipient(this.state, this.state.lastPlayerToAct!) : null;
+      // Whoever actually won with the Dragon already decided the recipient
+      // when they played it (see `pendingDragonRecipient`'s doc comment) --
+      // never re-decide here, even though this AI's pass is what happens to
+      // close the trick.
+      const recipient = isDragonWinPending(this.state) ? this.pendingDragonRecipient : null;
       this.state = mustOk(passTurn(this.state, seat, recipient));
+      if (this.state.currentBest === null) this.pendingDragonRecipient = null;
       return;
     }
 
@@ -261,6 +290,10 @@ export class SoloGame {
     // always calls play_combo without a wish) -- the model has no action head for it.
     const recipient = isDragonSingle(chosen) ? autoDragonRecipient(this.state, seat) : null;
     this.state = mustOk(playCombo(this.state, seat, chosen.cards, null, recipient));
+    // `playCombo` only actually applies `recipient` if this same play also
+    // ends the round (`currentBest` becomes null); otherwise it's silently
+    // discarded, so cache it here for the later closing pass to reapply.
+    this.pendingDragonRecipient = isDragonSingle(chosen) && this.state.currentBest !== null ? recipient : null;
     this.scoreRoundIfNeeded();
   }
 
@@ -330,6 +363,10 @@ export class SoloGame {
     const result = playCombo(this.state, HUMAN_SEAT, cards, wish, dragonRecipient);
     if (!result.ok) return result;
     this.state = result.value;
+    // See `playOneAiTurn`'s matching comment -- `dragonRecipient` is only
+    // actually applied by the reducer if this same play ends the round;
+    // otherwise cache the human's own choice for the later closing pass.
+    this.pendingDragonRecipient = isDragonCards(cards) && this.state.currentBest !== null ? dragonRecipient : null;
     this.scoreRoundIfNeeded();
     this.onTurnResolved?.(this.state);
     await this.advanceAiTurns();
@@ -337,11 +374,19 @@ export class SoloGame {
   }
 
   /** See `humanPlayCombo`'s doc comment -- same reasoning for reporting the
-   * human's own pass immediately, before any AI turns that follow it. */
+   * human's own pass immediately, before any AI turns that follow it.
+   *
+   * `dragonRecipient` is accepted for API symmetry with `humanPlayCombo` but
+   * only ever matters when the human's pass closes a trick this human *also*
+   * won with the Dragon -- an impossible turn order (see
+   * `pendingDragonRecipient`'s doc comment), so in practice the cached value
+   * always wins whenever a Dragon trick is actually pending. */
   async humanPassTurn(dragonRecipient: number | null = null): Promise<Result<GameState, string>> {
-    const result = passTurn(this.state, HUMAN_SEAT, dragonRecipient);
+    const recipient = isDragonWinPending(this.state) ? this.pendingDragonRecipient : dragonRecipient;
+    const result = passTurn(this.state, HUMAN_SEAT, recipient);
     if (!result.ok) return result;
     this.state = result.value;
+    if (this.state.currentBest === null) this.pendingDragonRecipient = null;
     this.onTurnResolved?.(this.state);
     await this.advanceAiTurns();
     return ok(this.state);
@@ -367,6 +412,7 @@ export class SoloGame {
     this.state = dealNewRound(deck);
     this.roundScored = false;
     this.pendingAiGifts = null;
+    this.pendingDragonRecipient = null;
     this.autoDecideAiLargeTichu();
     return this.state;
   }

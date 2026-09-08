@@ -21,6 +21,15 @@ export interface UsePlayFlowArgs {
    * whether a pass right now would actually close the trick (see
    * `isClosingPass` in `legalPlay.ts`). */
   readonly passesInARow: number;
+  /** True when whoever actually won the open Dragon trick has already
+   * decided the recipient (solo-AI captures this the instant the Dragon is
+   * played -- see `SoloGame`'s `pendingDragonRecipient`), so a closing PASS
+   * must never prompt again for it -- prompting whoever's pass happens to
+   * close the trick asks the wrong player whenever they aren't the actual
+   * winner. Always `false` for multiplayer today (no server-side equivalent
+   * cache yet -- a known follow-up, not fixed here), which keeps its
+   * existing (imperfect but unchanged) prompt-on-close behavior. */
+  readonly dragonRecipientPreDecided: boolean;
   readonly legalCombos: readonly Combo[];
   readonly canPassNow: boolean;
   readonly onPlayCards: (cards: readonly Card[], wish: Rank | null, dragonRecipient: number | null) => void;
@@ -59,6 +68,7 @@ export function usePlayFlow(args: UsePlayFlowArgs): UsePlayFlowResult {
     lastPlayerToAct,
     finishedOrder,
     passesInARow,
+    dragonRecipientPreDecided,
     legalCombos,
     canPassNow,
     onPlayCards,
@@ -111,7 +121,11 @@ export function usePlayFlow(args: UsePlayFlowArgs): UsePlayFlowResult {
 
   function submitPass(): void {
     if (!canPassNow) return;
-    if (isDragonSingle(currentBest) && isClosingPass(currentBest, lastPlayerToAct, finishedOrder, passesInARow)) {
+    if (
+      !dragonRecipientPreDecided &&
+      isDragonSingle(currentBest) &&
+      isClosingPass(currentBest, lastPlayerToAct, finishedOrder, passesInARow)
+    ) {
       setStep({ kind: 'dragon', action: 'pass', wish: null });
       return;
     }

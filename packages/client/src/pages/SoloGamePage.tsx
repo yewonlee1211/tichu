@@ -53,6 +53,15 @@ export function SoloGamePage({ session, onExit }: SoloGamePageProps) {
     });
   }
 
+  // A Dragon-won trick's recipient is already decided the instant the
+  // Dragon is played (see soloGame.ts's `pendingDragonRecipient`), so
+  // there's no real turn to wait out here -- this ref just holds a pure
+  // *display* transition ("트릭 획득" -> "용 획득") to reveal on the next
+  // tap, kept as its own gate (not `pendingAdvanceResolveRef`, and not
+  // subject to `AI_TAP_COOLDOWN_MS`) so it can never accidentally also
+  // advance a real AI turn in the same tap.
+  const pendingDragonRevealRef = useRef<(() => void) | null>(null);
+
   /** Bound to the whole page so any tap advances a waiting AI turn -- except
    * a tap that lands on an actual control (a button, in practice every
    * interactive element this page renders). Without that exclusion, the
@@ -63,6 +72,14 @@ export function SoloGamePage({ session, onExit }: SoloGamePageProps) {
    * the intended gap between the human's action and the next AI's to zero. */
   function handleTapToAdvance(event: MouseEvent<HTMLDivElement>): void {
     if (event.target instanceof Element && event.target.closest('button, a, select, input')) return;
+
+    const reveal = pendingDragonRevealRef.current;
+    if (reveal !== null) {
+      pendingDragonRevealRef.current = null;
+      reveal();
+      return;
+    }
+
     const resolve = pendingAdvanceResolveRef.current;
     if (resolve === null) return;
     const now = Date.now();
@@ -183,6 +200,9 @@ export function SoloGamePage({ session, onExit }: SoloGamePageProps) {
           void runBusy(() => game.humanPlayCombo(cards, wish, dragonRecipient))
         }
         onPass={(dragonRecipient: number | null) => void runBusy(() => game.humanPassTurn(dragonRecipient))}
+        onDragonRecipientPendingChange={(reveal) => {
+          pendingDragonRevealRef.current = reveal;
+        }}
       />
       <button type="button" className="solo-game-page__exit" onClick={handleExit}>
         나가기

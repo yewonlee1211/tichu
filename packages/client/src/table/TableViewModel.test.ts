@@ -30,6 +30,9 @@ describe('fromPlayerView', () => {
     expect(vm.viewerSeat).toBe(2);
     expect(vm.hand).toEqual(view.hand);
     expect(vm.seatNames).toEqual(['나', '상대 1', '상대 2', '상대 3']);
+    // Multiplayer has no server-side cache for an already-decided Dragon
+    // recipient yet -- see usePlayFlow.ts's dragonRecipientPreDecided doc.
+    expect(vm.dragonRecipientPreDecided).toBe(false);
   });
 
   it('accepts custom seat names (e.g. real player names from the lobby)', () => {
@@ -79,5 +82,8 @@ describe('fromSoloGameState', () => {
     expect(vm.handSizes).toEqual(withTrick.hands.map((h) => h.length));
     expect(vm.collectedPoints).toEqual([10, 0, 5, 0]);
     expect(vm.seatNames).toEqual(['나', 'AI 1', 'AI 2', 'AI 3']);
+    // SoloGame always captures a Dragon recipient decision the instant the
+    // Dragon is played -- see soloGame.ts's pendingDragonRecipient doc.
+    expect(vm.dragonRecipientPreDecided).toBe(true);
   });
 });

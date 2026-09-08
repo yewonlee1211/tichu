@@ -20,6 +20,7 @@ function setup(overrides: Partial<Parameters<typeof usePlayFlow>[0]> = {}) {
       lastPlayerToAct: null,
       finishedOrder: [],
       passesInARow: 0,
+      dragonRecipientPreDecided: false,
       legalCombos,
       canPassNow: true,
       onPlayCards,
@@ -104,7 +105,7 @@ describe('usePlayFlow submitPass', () => {
     expect(onPass).toHaveBeenCalledWith(null);
   });
 
-  it('routes through a dragon-recipient step keyed on lastPlayerToAct, not the passer -- when this pass actually closes the trick', () => {
+  it('routes through a dragon-recipient step keyed on lastPlayerToAct, not the passer -- when this pass actually closes the trick (dragonRecipientPreDecided: false, e.g. multiplayer)', () => {
     const dragonBest = identifyCombo([card(Rank.Dragon, Suit.Special)]);
     const { result, onPass } = setup({
       currentBest: dragonBest,
@@ -121,6 +122,24 @@ describe('usePlayFlow submitPass', () => {
 
     act(() => result.current.chooseDragonRecipient(0));
     expect(onPass).toHaveBeenCalledWith(0);
+  });
+
+  it('regression: never re-prompts the closing passer when dragonRecipientPreDecided is true (solo-AI) -- the actual winner already decided when they played the Dragon', () => {
+    const dragonBest = identifyCombo([card(Rank.Dragon, Suit.Special)]);
+    const { result, onPass } = setup({
+      currentBest: dragonBest,
+      lastPlayerToAct: 1, // seat 1 (not the passer) actually won with the Dragon
+      viewerSeat: 3, // seat 3's pass happens to close the trick
+      finishedOrder: [],
+      passesInARow: 2, // 3rd (closing) pass
+      dragonRecipientPreDecided: true,
+    });
+
+    act(() => result.current.submitPass());
+    // no picker step -- passes straight through with a null recipient, since
+    // the real recipient was already cached elsewhere (see soloGame.ts)
+    expect(result.current.step).toEqual({ kind: 'selecting' });
+    expect(onPass).toHaveBeenCalledWith(null);
   });
 
   it('passes immediately with no dragon step when this pass is not the one closing the trick', () => {
@@ -158,6 +177,7 @@ describe('usePlayFlow reset behavior', () => {
           lastPlayerToAct: null,
           finishedOrder: [],
           passesInARow: 0,
+          dragonRecipientPreDecided: false,
           legalCombos: legal,
           canPassNow: true,
           onPlayCards: vi.fn(),

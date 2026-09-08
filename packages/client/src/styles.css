@@ -331,6 +331,20 @@ label {
   color: var(--color-ink-dim);
 }
 
+/* Sits just below the felt circle (not inside it, unlike `.action-announcement`
+   itself) so it never competes for space with the banner's own content. */
+.seats__pass-note {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-ink-dim);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* ---- cards ---- */
 
 .hand {

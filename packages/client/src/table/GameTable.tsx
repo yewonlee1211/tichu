@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { type Card, type Combo, Phase, type Rank } from '@tichu/shared';
 import type { TableViewModel } from './TableViewModel';
 import { hasWishFulfillingPlay, isPlayableTichuState } from './legalPlay';
@@ -28,6 +29,13 @@ export interface GameTableProps {
   readonly onCallTichu: () => void;
   readonly onPlayCards: (cards: readonly Card[], wish: Rank | null, dragonRecipient: number | null) => void;
   readonly onPass: (dragonRecipient: number | null) => void;
+  /** Reported every time a Dragon-won trick's "who received it" reveal
+   * becomes available (or stops being available) -- `null` when nothing is
+   * pending, otherwise the function that reveals it. Solo-AI wires this to
+   * its screen-tap handler (see `SoloGamePage.tsx`); multiplayer has no
+   * equivalent pacing concept and can simply leave this unset. See
+   * `useActionAnnouncement`'s `revealDragonRecipient` doc comment. */
+  readonly onDragonRecipientPendingChange?: (reveal: (() => void) | null) => void;
 }
 
 /** The one render surface shared by both human-vs-human (`PlayerView`) and
@@ -49,6 +57,7 @@ export function GameTable({
   onCallTichu,
   onPlayCards,
   onPass,
+  onDragonRecipientPendingChange,
 }: GameTableProps) {
   const isMyTurn = vm.currentPlayer === vm.viewerSeat;
   const canPassNow =
@@ -62,12 +71,17 @@ export function GameTable({
     lastPlayerToAct: vm.lastPlayerToAct,
     finishedOrder: vm.finishedOrder,
     passesInARow: vm.passesInARow,
+    dragonRecipientPreDecided: vm.dragonRecipientPreDecided,
     legalCombos,
     canPassNow,
     onPlayCards,
     onPass,
   });
-  const announcement = useActionAnnouncement(vm);
+  const { announcement, lastPassSeat, dragonRecipientPending, revealDragonRecipient } = useActionAnnouncement(vm);
+
+  useEffect(() => {
+    onDragonRecipientPendingChange?.(dragonRecipientPending ? revealDragonRecipient : null);
+  }, [dragonRecipientPending, revealDragonRecipient, onDragonRecipientPendingChange]);
 
   return (
     <div className="game-table">
@@ -88,6 +102,7 @@ export function GameTable({
         largeTichuCalls={vm.largeTichuCalls}
         finishedOrder={vm.finishedOrder}
         announcement={announcement}
+        lastPassSeat={lastPassSeat}
       />
 
       {vm.phase === Phase.LargeTichu && (
