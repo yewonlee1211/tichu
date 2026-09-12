@@ -73,6 +73,59 @@ def find_latest_training_state(checkpoint_dir: Path) -> Path | None:
     return max(numbered_candidates, key=lambda pair: pair[0])[1]
 
 
+def load_warm_start_state_dict(network: TichuPolicyValueNet, checkpoint_path: Path) -> list[str]:
+    """Loads `checkpoint_path` (a `checkpoint_*.pt` model-weights-only file) into
+    `network`, skipping any parameter whose shape no longer matches -- e.g.
+    `action_encoder.0.{weight,bias}` after `ACTION_DIM` grows between curriculum
+    stages (see .claude/plans/tichu-m2-action-space-curriculum.plan.md). Every
+    other parameter (`state_encoder`/`action_encoder.2`/`action_scorer`/
+    `value_head`) is unaffected by that growth and loads unchanged, so a new
+    stage's network starts from the previous stage's learned representations
+    instead of from scratch. Returns the list of skipped parameter names (left
+    at `network`'s own fresh initialization) so a caller can log/verify what
+    was actually warm-started versus reinitialized."""
+    # Trusted load: checkpoint_path is always expected to be a checkpoint_*.pt
+    # this same module wrote via _atomic_torch_save, never an arbitrary/untrusted
+    # file.
+    checkpoint_state = torch.load(checkpoint_path, weights_only=True)
+    own_state = network.state_dict()
+    skipped: list[str] = []
+    for key, value in checkpoint_state.items():
+        if key in own_state and own_state[key].shape == value.shape:
+            own_state[key] = value
+        else:
+            skipped.append(key)
+    network.load_state_dict(own_state)
+    return skipped
+
+
+def migrate_action_encoder_input_layer(network: TichuPolicyValueNet, checkpoint_path: Path) -> None:
+    """Repairs the one gap `load_warm_start_state_dict` leaves behind when
+    `ACTION_DIM` grows: that function must skip `action_encoder.0.weight`
+    entirely once its shape changes, which throws away every previously
+    learned column, not just the newly inserted ones.
+
+    This project's encoding convention (see `tichu_env/encoding.py`) always
+    keeps PASS as the very last action dimension and inserts any new
+    pseudo-action flag columns (e.g. Stage 1's large-Tichu call/decline) just
+    before it -- so every column except PASS keeps the same meaning at the
+    same index across a stage boundary, and PASS itself just moves from the
+    old last index to the new one. This copies exactly those matching
+    columns from `checkpoint_path` into `network`'s (freshly initialized)
+    `action_encoder.0.weight`, leaving only the genuinely new columns at
+    their random initialization. No-op if the shape already matches (nothing
+    grew, so `load_warm_start_state_dict` already loaded it directly)."""
+    checkpoint_state = torch.load(checkpoint_path, weights_only=True)
+    old_weight = checkpoint_state["action_encoder.0.weight"]
+    new_weight = network.action_encoder[0].weight.data
+    if old_weight.shape == new_weight.shape:
+        return
+    old_action_dim = old_weight.shape[1]
+    with torch.no_grad():
+        new_weight[:, : old_action_dim - 1] = old_weight[:, : old_action_dim - 1]
+        new_weight[:, -1] = old_weight[:, -1]
+
+
 def compute_reinforce_loss(
     network: TichuPolicyValueNet,
     episodes: list[list[Transition]],
@@ -487,10 +540,21 @@ def _main() -> None:
         default=None,
         help="Resume from a specific training_state_*.pt file (overrides --resume).",
     )
+    parser.add_argument(
+        "--warm-start-from",
+        type=Path,
+        default=None,
+        help="Curriculum warm-start: load a prior stage's checkpoint_*.pt into the freshly "
+        "constructed network before training starts, skipping any parameter whose shape no "
+        "longer matches (e.g. after ACTION_DIM grows). Mutually exclusive with --resume/--resume-from, "
+        "which continue a run's own optimizer/rng state instead of starting a new one.",
+    )
     args = parser.parse_args()
 
     if args.heuristic_opponent and args.opponent_pool:
         parser.error("--heuristic-opponent and --opponent-pool are mutually exclusive")
+    if args.warm_start_from is not None and (args.resume or args.resume_from is not None):
+        parser.error("--warm-start-from and --resume/--resume-from are mutually exclusive")
 
     resume_from = args.resume_from
     if resume_from is None and args.resume:
@@ -501,6 +565,9 @@ def _main() -> None:
     if args.seed is not None:
         torch.manual_seed(args.seed)
     network = TichuPolicyValueNet()
+    if args.warm_start_from is not None:
+        load_warm_start_state_dict(network, args.warm_start_from)
+        migrate_action_encoder_input_layer(network, args.warm_start_from)
     rng = random.Random(args.seed) if args.seed is not None else None
     opponent = AdvancedHeuristicAgent() if args.heuristic_opponent else None
     opponent_pool = None

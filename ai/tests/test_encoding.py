@@ -11,6 +11,7 @@ from tichu_env.encoding import (
     _PASSES_DIM,
     _PHASE_DIM,
     encode_action,
+    encode_large_tichu_action,
     encode_legal_actions,
     encode_observation,
 )
@@ -216,6 +217,45 @@ def test_encode_action_for_combo_sets_card_bits_and_type():
 
     assert vec[-1] == 0.0  # not a pass
     assert vec[:56].sum() == 2  # two cards used
+
+
+def test_encode_large_tichu_call_and_decline_are_distinguishable_one_hot_flags():
+    called_vec = encode_large_tichu_action(True)
+    declined_vec = encode_large_tichu_action(False)
+
+    assert called_vec.shape == (ACTION_DIM,)
+    assert declined_vec.shape == (ACTION_DIM,)
+    assert called_vec.sum() == 1.0
+    assert declined_vec.sum() == 1.0
+    assert not np.array_equal(called_vec, declined_vec)
+    # Disjoint from PASS and from a real combo's encoding -- the network must
+    # be able to tell a large-Tichu decision apart from a trick-play action.
+    assert not np.array_equal(called_vec, encode_action(None))
+    assert not np.array_equal(declined_vec, encode_action(None))
+
+
+def test_encode_legal_actions_during_large_tichu_offers_call_and_decline_for_the_current_seat():
+    state = make_state(
+        {0: [card(Rank.FIVE)]},
+        phase=Phase.LARGE_TICHU,
+        current_player=0,
+        large_tichu_calls=(None, None, None, None),
+    )
+
+    actions = encode_legal_actions(state, player=0)
+
+    assert {combo for combo, _ in actions} == {True, False}
+
+
+def test_encode_legal_actions_during_large_tichu_is_empty_before_a_seats_turn():
+    state = make_state(
+        {1: [card(Rank.FIVE)]},
+        phase=Phase.LARGE_TICHU,
+        current_player=0,
+        large_tichu_calls=(None, None, None, None),
+    )
+
+    assert encode_legal_actions(state, player=1) == []
 
 
 def test_encode_legal_actions_includes_pass_only_when_following():

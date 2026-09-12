@@ -77,6 +77,8 @@ def decide_large_tichu(state: GameState, player: int, called: bool) -> GameState
         raise ValueError("large tichu can only be decided before the final 6 cards are dealt")
     if state.large_tichu_calls[player] is not None:
         raise ValueError("player has already decided on large tichu")
+    if player != state.current_player:
+        raise ValueError("it is not this player's turn to decide on large tichu")
 
     calls = list(state.large_tichu_calls)
     calls[player] = called
@@ -90,7 +92,16 @@ def decide_large_tichu(state: GameState, player: int, called: bool) -> GameState
             pending_final_cards=tuple(() for _ in range(NUM_PLAYERS)),
             phase=Phase.EXCHANGE,
         )
+    else:
+        state = replace(state, current_player=_next_undecided_large_tichu_seat(state))
     return state
+
+
+def _next_undecided_large_tichu_seat(state: GameState) -> int:
+    seat = (state.current_player + 1) % NUM_PLAYERS
+    while state.large_tichu_calls[seat] is not None:
+        seat = (seat + 1) % NUM_PLAYERS
+    return seat
 
 
 def call_tichu(state: GameState, player: int) -> GameState:

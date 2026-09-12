@@ -15,6 +15,7 @@ from training.train import train
 from eval.arena import (
     _elo_diff_from_win_rate,
     _resolve_checkpoint,
+    _resolve_opponent_chooser,
     advanced_heuristic_chooser,
     heuristic_chooser,
     load_checkpoint,
@@ -152,3 +153,47 @@ def test_advanced_heuristic_team_beats_random_team_over_many_arena_games():
 
     assert result.team_a_win_rate > 0.5
     assert result.team_a_wins + result.team_b_wins + result.draws == 100
+
+
+# ---------------------------------------------------------------------------
+# _resolve_opponent_chooser -- the CLI's --opponent spec resolution
+# ---------------------------------------------------------------------------
+
+
+def _assert_only_plays_legal_actions(choose, seed: int) -> None:
+    env = TichuEnv(rng=random.Random(seed))
+    result = env.reset()
+    while not result.done:
+        combo = choose(result)
+        assert combo in [c for c, _ in result.legal_actions]
+        result = env.step(combo)
+
+
+def test_resolve_opponent_chooser_heuristic_spec_plays_only_legal_actions():
+    choose = _resolve_opponent_chooser("heuristic", Path("unused"), deterministic=True)
+    _assert_only_plays_legal_actions(choose, seed=4)
+
+
+def test_resolve_opponent_chooser_advanced_heuristic_spec_plays_only_legal_actions():
+    choose = _resolve_opponent_chooser("advanced_heuristic", Path("unused"), deterministic=True)
+    _assert_only_plays_legal_actions(choose, seed=5)
+
+
+def test_resolve_opponent_chooser_checkpoint_path_loads_that_checkpoint(tmp_path: Path):
+    network = _small_network()
+    train(
+        network,
+        iterations=1,
+        games_per_iteration=2,
+        rng=random.Random(1),
+        checkpoint_dir=tmp_path / "checkpoints",
+        checkpoint_every=1,
+        metrics_path=tmp_path / "metrics.csv",
+    )
+    checkpoint_path = tmp_path / "checkpoints" / "checkpoint_1.pt"
+
+    choose = _resolve_opponent_chooser(
+        str(checkpoint_path), tmp_path, deterministic=True, hidden_dim=16, embedding_dim=8
+    )
+
+    _assert_only_plays_legal_actions(choose, seed=6)

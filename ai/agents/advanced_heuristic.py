@@ -4,7 +4,7 @@ from collections import Counter
 
 import numpy as np
 
-from tichu_env.cards import NUMERIC_RANKS, Rank
+from tichu_env.cards import NUMERIC_RANKS, Card, Rank
 from tichu_env.combinations import BOMB_TYPES, Combo, ComboType
 from tichu_env.state import NUM_PLAYERS, PARTNER, GameState
 
@@ -35,7 +35,12 @@ class AdvancedHeuristicAgent:
        threat could still be out there.
     """
 
-    def choose_action(self, state: GameState, legal_actions: list[LegalAction]) -> Combo | None:
+    _LARGE_TICHU_MIN_ACES = 2  # among the 8 dealt cards
+
+    def choose_action(self, state: GameState, legal_actions: list[LegalAction]) -> Combo | bool | None:
+        if any(isinstance(action, bool) for action, _ in legal_actions):
+            return self._should_call_large_tichu(state.hands[state.current_player])
+
         is_leading = state.current_best is None
         can_pass = any(combo is None for combo, _ in legal_actions)
 
@@ -68,6 +73,15 @@ class AdvancedHeuristicAgent:
 
         bombs = [combo for combo, _ in legal_actions if combo is not None]
         return min(bombs, key=lambda combo: combo.rank_strength)
+
+    def _should_call_large_tichu(self, hand: tuple[Card, ...]) -> bool:
+        """Simple hand-strength gate: call with at least
+        `_LARGE_TICHU_MIN_ACES` Aces among the 8 cards dealt before the
+        large-Tichu decision. This agent is a fixed opponent baseline, not
+        the thing being trained -- it only needs a plausible, non-degenerate
+        call rate that actually varies with hand quality."""
+        aces = sum(1 for card in hand if card.rank is Rank.ACE)
+        return aces >= self._LARGE_TICHU_MIN_ACES
 
     def _partner_holds_the_trick(self, state: GameState) -> bool:
         winner = state.last_player_to_act

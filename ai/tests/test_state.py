@@ -78,6 +78,27 @@ def test_large_tichu_decisions_deal_final_6_once_everyone_has_decided():
     assert state.large_tichu_calls == (False, False, False, True)
 
 
+def test_decide_large_tichu_advances_current_player_to_the_next_undecided_seat():
+    state = deal_new_round(random.Random(2))
+    assert state.current_player == 0
+
+    state = decide_large_tichu(state, 0, called=False)
+    assert state.current_player == 1
+
+    state = decide_large_tichu(state, 1, called=True)
+    assert state.current_player == 2
+
+    state = decide_large_tichu(state, 2, called=False)
+    assert state.current_player == 3
+
+
+def test_decide_large_tichu_rejects_a_decision_from_the_wrong_seat():
+    state = deal_new_round(random.Random(2))
+
+    with pytest.raises(ValueError):
+        decide_large_tichu(state, 1, called=False)
+
+
 def test_cannot_decide_large_tichu_twice():
     state = deal_new_round(random.Random(3))
     state = decide_large_tichu(state, 0, called=False)

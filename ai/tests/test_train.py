@@ -11,7 +11,13 @@ from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 from training.opponent_pool import OpponentPool
 from training.self_play import HeuristicOpponentAdapter, PolicyOpponent, generate_self_play_games
-from training.train import compute_ppo_loss, compute_reinforce_loss, train
+from training.train import (
+    compute_ppo_loss,
+    compute_reinforce_loss,
+    load_warm_start_state_dict,
+    migrate_action_encoder_input_layer,
+    train,
+)
 
 
 def _small_network() -> TichuPolicyValueNet:
@@ -1182,3 +1188,107 @@ def test_training_actually_changes_the_networks_parameters(tmp_path: Path):
 
     after = list(network.parameters())
     assert any(not torch.equal(b, a) for b, a in zip(before, after))
+
+
+# ---------------------------------------------------------------------------
+# load_warm_start_state_dict -- curriculum-stage warm-start (ACTION_DIM growth)
+# ---------------------------------------------------------------------------
+
+
+def test_load_warm_start_state_dict_loads_every_parameter_when_shapes_are_unchanged(tmp_path: Path):
+    source = TichuPolicyValueNet(hidden_dim=16, embedding_dim=8, action_dim=10)
+    torch.save(source.state_dict(), tmp_path / "checkpoint.pt")
+    target = TichuPolicyValueNet(hidden_dim=16, embedding_dim=8, action_dim=10)
+
+    skipped = load_warm_start_state_dict(target, tmp_path / "checkpoint.pt")
+
+    assert skipped == []
+    for source_param, target_param in zip(source.parameters(), target.parameters()):
+        assert torch.equal(source_param, target_param)
+
+
+def test_load_warm_start_state_dict_skips_only_the_action_encoders_input_layer_when_action_dim_grows(
+    tmp_path: Path,
+):
+    source = TichuPolicyValueNet(hidden_dim=16, embedding_dim=8, action_dim=10)
+    torch.save(source.state_dict(), tmp_path / "checkpoint.pt")
+    target = TichuPolicyValueNet(hidden_dim=16, embedding_dim=8, action_dim=12)
+
+    skipped = load_warm_start_state_dict(target, tmp_path / "checkpoint.pt")
+
+    # Only the input layer's *weight* actually depends on action_dim -- its
+    # bias is shaped (hidden_dim,) regardless, so it loads unchanged like
+    # everything else.
+    assert set(skipped) == {"action_encoder.0.weight"}
+    assert target.action_encoder[0].weight.shape == (16, 12)
+    assert torch.equal(target.action_encoder[0].bias, source.action_encoder[0].bias)
+    assert torch.equal(target.state_encoder[0].weight, source.state_encoder[0].weight)
+    assert torch.equal(target.action_encoder[2].weight, source.action_encoder[2].weight)
+    assert torch.equal(target.action_scorer[0].weight, source.action_scorer[0].weight)
+    assert torch.equal(target.value_head[0].weight, source.value_head[0].weight)
+
+
+def test_migrate_action_encoder_input_layer_preserves_all_but_the_newly_inserted_columns(tmp_path: Path):
+    # Mirrors this project's real ACTION_DIM history: 69 -> 71, with PASS kept as
+    # the very last column in both layouts and the 2 new large-Tichu flag
+    # columns inserted just before it (see tichu_env/encoding.py). Columns
+    # 0..67 keep the same meaning at the same position in both layouts; only
+    # PASS moves (from old index 68 to new index 70).
+    source = TichuPolicyValueNet(hidden_dim=4, embedding_dim=4, action_dim=69)
+    with torch.no_grad():
+        source.action_encoder[0].weight.copy_(torch.arange(4 * 69, dtype=torch.float32).reshape(4, 69))
+    torch.save(source.state_dict(), tmp_path / "checkpoint.pt")
+
+    target = TichuPolicyValueNet(hidden_dim=4, embedding_dim=4, action_dim=71)
+    gap_before = target.action_encoder[0].weight[:, 68:70].clone()
+
+    migrate_action_encoder_input_layer(target, tmp_path / "checkpoint.pt")
+
+    assert torch.equal(target.action_encoder[0].weight[:, :68], source.action_encoder[0].weight[:, :68])
+    assert torch.equal(target.action_encoder[0].weight[:, -1], source.action_encoder[0].weight[:, -1])
+    # The 2 newly inserted columns (large-Tichu call/decline) have no old
+    # counterpart -- they must be left exactly as freshly initialized.
+    assert torch.equal(target.action_encoder[0].weight[:, 68:70], gap_before)
+
+
+def test_migrate_action_encoder_input_layer_is_a_noop_when_action_dim_is_unchanged(tmp_path: Path):
+    source = TichuPolicyValueNet(hidden_dim=4, embedding_dim=4, action_dim=10)
+    torch.save(source.state_dict(), tmp_path / "checkpoint.pt")
+    target = TichuPolicyValueNet(hidden_dim=4, embedding_dim=4, action_dim=10)
+    before = target.action_encoder[0].weight.clone()
+
+    migrate_action_encoder_input_layer(target, tmp_path / "checkpoint.pt")
+
+    assert torch.equal(target.action_encoder[0].weight, before)
+
+
+def test_cli_warm_start_from_loads_a_prior_checkpoint_before_training(tmp_path: Path, monkeypatch):
+    seed_checkpoint = tmp_path / "seed_checkpoint.pt"
+    torch.save(TichuPolicyValueNet().state_dict(), seed_checkpoint)
+
+    checkpoint_dir = tmp_path / "checkpoints"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train.py",
+            "--iterations",
+            "1",
+            "--games-per-iteration",
+            "2",
+            "--checkpoint-dir",
+            str(checkpoint_dir),
+            "--checkpoint-every",
+            "1",
+            "--metrics-path",
+            str(checkpoint_dir / "metrics.csv"),
+            "--seed",
+            "16",
+            "--warm-start-from",
+            str(seed_checkpoint),
+        ],
+    )
+
+    train_module._main()
+
+    assert (checkpoint_dir / "checkpoint_1.pt").exists()

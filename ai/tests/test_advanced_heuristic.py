@@ -2,7 +2,7 @@ import random
 
 from tichu_env.cards import Card, Rank, Suit
 from tichu_env.combinations import identify_combo
-from tichu_env.encoding import encode_action
+from tichu_env.encoding import encode_action, encode_large_tichu_action
 from tichu_env.env import TichuEnv
 from tichu_env.state import NUM_PLAYERS, GameState, Phase
 
@@ -45,6 +45,89 @@ def make_playing_state(hands: dict[int, list[Card]] | None = None, **overrides) 
     )
     base.update(overrides)
     return GameState(**base)
+
+
+# ---------------------------------------------------------------------------
+# Large Tichu decision
+# ---------------------------------------------------------------------------
+
+_LARGE_TICHU_LEGAL_ACTIONS = [(True, encode_large_tichu_action(True)), (False, encode_large_tichu_action(False))]
+
+
+def test_advanced_heuristic_calls_large_tichu_with_a_strong_hand():
+    strong_hand = [
+        card(Rank.ACE, Suit.SWORD),
+        card(Rank.ACE, Suit.PAGODA),
+        card(Rank.KING, Suit.SWORD),
+        special(Rank.DRAGON),
+        card(Rank.TWO),
+        card(Rank.THREE),
+        card(Rank.FOUR),
+        card(Rank.FIVE),
+    ]
+    state = make_playing_state(hands={0: strong_hand}, phase=Phase.LARGE_TICHU, current_player=0)
+    agent = AdvancedHeuristicAgent()
+
+    chosen = agent.choose_action(state, _LARGE_TICHU_LEGAL_ACTIONS)
+
+    assert chosen is True
+
+
+def test_advanced_heuristic_declines_large_tichu_with_a_weak_hand():
+    weak_hand = [
+        card(Rank.TWO),
+        card(Rank.THREE),
+        card(Rank.FOUR),
+        card(Rank.FIVE),
+        card(Rank.SIX),
+        card(Rank.SEVEN),
+        card(Rank.EIGHT),
+        card(Rank.NINE),
+    ]
+    state = make_playing_state(hands={0: weak_hand}, phase=Phase.LARGE_TICHU, current_player=0)
+    agent = AdvancedHeuristicAgent()
+
+    chosen = agent.choose_action(state, _LARGE_TICHU_LEGAL_ACTIONS)
+
+    assert chosen is False
+
+
+def test_advanced_heuristic_calls_large_tichu_with_two_aces_even_if_otherwise_weak():
+    hand_with_two_aces = [
+        card(Rank.ACE, Suit.SWORD),
+        card(Rank.ACE, Suit.PAGODA),
+        card(Rank.TWO),
+        card(Rank.THREE),
+        card(Rank.FOUR),
+        card(Rank.FIVE),
+        card(Rank.SIX),
+        card(Rank.SEVEN),
+    ]
+    state = make_playing_state(hands={0: hand_with_two_aces}, phase=Phase.LARGE_TICHU, current_player=0)
+    agent = AdvancedHeuristicAgent()
+
+    chosen = agent.choose_action(state, _LARGE_TICHU_LEGAL_ACTIONS)
+
+    assert chosen is True
+
+
+def test_advanced_heuristic_declines_large_tichu_with_only_one_ace_despite_other_high_cards():
+    hand_with_one_ace = [
+        card(Rank.ACE, Suit.SWORD),
+        card(Rank.JACK),
+        card(Rank.QUEEN),
+        special(Rank.DRAGON),
+        card(Rank.TWO),
+        card(Rank.THREE),
+        card(Rank.FOUR),
+        card(Rank.FIVE),
+    ]
+    state = make_playing_state(hands={0: hand_with_one_ace}, phase=Phase.LARGE_TICHU, current_player=0)
+    agent = AdvancedHeuristicAgent()
+
+    chosen = agent.choose_action(state, _LARGE_TICHU_LEGAL_ACTIONS)
+
+    assert chosen is False
 
 
 # ---------------------------------------------------------------------------

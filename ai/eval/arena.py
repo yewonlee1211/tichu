@@ -147,6 +147,20 @@ def _resolve_checkpoint(spec: str, checkpoint_dir: Path) -> Path:
     return candidates[-1]
 
 
+def _resolve_opponent_chooser(
+    opponent_spec: str, checkpoint_dir: Path, *, deterministic: bool, **network_kwargs
+) -> SeatChooser:
+    """Resolves the CLI's `--opponent` spec into a `SeatChooser`: `"heuristic"` for
+    `HeuristicAgent`, `"advanced_heuristic"` for `AdvancedHeuristicAgent`, or a
+    checkpoint path (or `"latest"`) for another trained policy."""
+    if opponent_spec == "heuristic":
+        return heuristic_chooser()
+    if opponent_spec == "advanced_heuristic":
+        return advanced_heuristic_chooser()
+    opponent_path = _resolve_checkpoint(opponent_spec, checkpoint_dir)
+    return policy_chooser(load_checkpoint(opponent_path, **network_kwargs), deterministic=deterministic)
+
+
 def _main() -> None:
     import argparse
 
@@ -154,7 +168,9 @@ def _main() -> None:
         description="Evaluate a Tichu policy checkpoint against a heuristic baseline or another checkpoint."
     )
     parser.add_argument("--checkpoint", required=True, help="Checkpoint path, or 'latest' for the newest in --checkpoint-dir.")
-    parser.add_argument("--opponent", default="heuristic", help="'heuristic', a checkpoint path, or 'latest'.")
+    parser.add_argument(
+        "--opponent", default="heuristic", help="'heuristic', 'advanced_heuristic', a checkpoint path, or 'latest'."
+    )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--games", type=int, default=100)
     parser.add_argument("--stochastic", action="store_true", help="Sample actions instead of playing the argmax move.")
@@ -164,11 +180,9 @@ def _main() -> None:
     checkpoint_path = _resolve_checkpoint(args.checkpoint, args.checkpoint_dir)
     team_a_chooser = policy_chooser(load_checkpoint(checkpoint_path), deterministic=not args.stochastic)
 
-    if args.opponent == "heuristic":
-        team_b_chooser = heuristic_chooser()
-    else:
-        opponent_path = _resolve_checkpoint(args.opponent, args.checkpoint_dir)
-        team_b_chooser = policy_chooser(load_checkpoint(opponent_path), deterministic=not args.stochastic)
+    team_b_chooser = _resolve_opponent_chooser(
+        args.opponent, args.checkpoint_dir, deterministic=not args.stochastic
+    )
 
     rng = random.Random(args.seed) if args.seed is not None else None
     result = run_arena(team_a_chooser, team_b_chooser, games=args.games, rng=rng)

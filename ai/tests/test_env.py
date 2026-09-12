@@ -24,14 +24,48 @@ def test_random_agent_completes_many_rounds_without_crashing():
         assert env.state.phase is Phase.ROUND_OVER
 
 
-def test_reset_lands_directly_in_playing_phase():
+def test_reset_lands_in_large_tichu_phase_with_8_card_hands():
     env = TichuEnv(rng=random.Random(1))
 
     result = env.reset()
 
-    assert env.state.phase is Phase.PLAYING
-    assert all(len(hand) == 14 for hand in env.state.hands)
+    assert env.state.phase is Phase.LARGE_TICHU
+    assert all(len(hand) == 8 for hand in env.state.hands)
     assert result.done is False
+
+
+def test_legal_actions_during_large_tichu_offers_only_call_and_decline_for_the_current_seat():
+    env = TichuEnv(rng=random.Random(1))
+
+    result = env.reset()
+
+    assert {action for action, _ in result.legal_actions} == {True, False}
+
+
+def test_declining_large_tichu_four_times_reaches_playing_phase_with_14_card_hands():
+    env = TichuEnv(rng=random.Random(1))
+    result = env.reset()
+
+    for _ in range(4):
+        assert result.state.phase is Phase.LARGE_TICHU
+        decline = next(action for action, _ in result.legal_actions if action is False)
+        result = env.step(decline)
+
+    assert result.state.phase is Phase.PLAYING
+    assert all(len(hand) == 14 for hand in result.state.hands)
+    assert result.done is False
+
+
+def test_step_rejects_a_non_bool_action_during_large_tichu_phase():
+    env = TichuEnv(rng=random.Random(1))
+    env.reset()
+
+    try:
+        env.step(None)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected step() to reject a non-bool action during Phase.LARGE_TICHU")
 
 
 def test_step_raises_on_action_outside_legal_set():

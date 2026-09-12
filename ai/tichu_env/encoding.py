@@ -72,8 +72,12 @@ OBS_DIM = (
 )
 
 # --- Action layout -----------------------------------------------------------
-# cards used, combo type, length, rank strength, is_lone_phoenix, is_pass
-ACTION_DIM = NUM_CARDS + NUM_COMBO_TYPES + 4
+# cards used, combo type, length, rank strength, is_lone_phoenix,
+# is_large_tichu_call, is_large_tichu_decline, is_pass (kept last so it stays
+# addressable as vec[-1], matching every existing PASS-detection call site).
+_LARGE_TICHU_CALL_OFFSET = 3
+_LARGE_TICHU_DECLINE_OFFSET = 4
+ACTION_DIM = NUM_CARDS + NUM_COMBO_TYPES + 6
 
 
 def encode_observation(state: GameState, player: int) -> np.ndarray:
@@ -118,11 +122,35 @@ def encode_action(combo: Combo | None) -> np.ndarray:
     return vec
 
 
-def encode_legal_actions(state: GameState, player: int) -> list[tuple[Combo | None, np.ndarray]]:
+def encode_large_tichu_action(called: bool) -> np.ndarray:
+    """Encode the large-Tichu call/decline pseudo-action offered once per
+    player before the final 6 cards are dealt (see `Phase.LARGE_TICHU`).
+    Carries no card information -- just a flag bit, the same pattern PASS
+    already uses."""
+    vec = np.zeros(ACTION_DIM, dtype=np.float32)
+    offset = _LARGE_TICHU_CALL_OFFSET if called else _LARGE_TICHU_DECLINE_OFFSET
+    vec[NUM_CARDS + NUM_COMBO_TYPES + offset] = 1.0
+    return vec
+
+
+def encode_legal_actions(state: GameState, player: int) -> list[tuple[Combo | bool | None, np.ndarray]]:
     """All legal candidate actions for `player` right now, each paired with its
-    encoded vector. PASS is included only when it is actually `player`'s turn
-    and there is a current trick to pass on (you cannot pass while leading,
-    and a non-turn player may only interrupt with a bomb, never pass)."""
+    encoded vector.
+
+    During `Phase.LARGE_TICHU`, the only decision is call (`True`) or decline
+    (`False`) large Tichu, offered exactly once per player and only once it is
+    that player's turn to decide (see `state.decide_large_tichu`'s
+    `current_player` bookkeeping) -- everyone else sees no legal actions yet.
+
+    Otherwise (trick play), PASS (`None`) is included only when it is
+    actually `player`'s turn and there is a current trick to pass on (you
+    cannot pass while leading, and a non-turn player may only interrupt with
+    a bomb, never pass)."""
+    if state.phase is Phase.LARGE_TICHU:
+        if player != state.current_player:
+            return []
+        return [(True, encode_large_tichu_action(True)), (False, encode_large_tichu_action(False))]
+
     candidates: list[Combo | None] = list(legal_combos(state, player))
     if state.current_best is not None and player == state.current_player:
         candidates.append(None)

@@ -6,7 +6,7 @@ from typing import Optional
 
 import numpy as np
 
-from tichu_env.cards import Rank
+from tichu_env.cards import Card, Rank
 from tichu_env.combinations import Combo, ComboType
 from tichu_env.encoding import encode_legal_actions, encode_observation
 from tichu_env.scoring import score_round
@@ -28,7 +28,7 @@ from tichu_env.state import (
 class StepResult:
     player: int
     observation: np.ndarray
-    legal_actions: list[tuple[Optional[Combo], np.ndarray]]
+    legal_actions: list[tuple[Combo | bool | None, np.ndarray]]
     reward: float
     done: bool
     info: dict
@@ -36,13 +36,13 @@ class StepResult:
 
 
 class TichuEnv:
-    """A single-round Tichu environment whose RL action space is trick play
-    only (play a combo, or pass). Large Tichu, card exchange, and (small)
-    Tichu calls are auto-resolved with fixed non-strategic defaults on
-    reset() so that every episode starts already in the trick-play phase.
-    This scope is intentional (see ai/RULES.md) -- those decisions can be
-    exposed as additional action heads later without touching the trick-play
-    loop."""
+    """A single-round Tichu environment. The RL action space currently
+    covers the large-Tichu call/decline decision (`Phase.LARGE_TICHU`, one
+    per player, `True`/`False`) and trick play (`Phase.PLAYING`, a `Combo` or
+    `None` to pass). Card exchange and (small) Tichu calls are still
+    auto-resolved with fixed non-strategic defaults so every episode reaches
+    trick play; those remain the next decisions to expose (see
+    .claude/plans/tichu-m2-action-space-curriculum.plan.md)."""
 
     def __init__(self, rng: random.Random | None = None):
         self._rng = rng if rng is not None else random.Random()
@@ -63,34 +63,17 @@ class TichuEnv:
         return self.state.phase is Phase.ROUND_OVER
 
     def reset(self) -> StepResult:
-        state = deal_new_round(self._rng)
-        for player in range(NUM_PLAYERS):
-            state = decide_large_tichu(state, player, called=False)
-        state = _auto_exchange(state)
-        self._state = state
+        self._state = deal_new_round(self._rng)
         return self._observe_current(reward=0.0, done=False, info={})
 
-    def step(self, action: Combo | None) -> StepResult:
+    def step(self, action: Combo | bool | None) -> StepResult:
         state = self.state
         player = state.current_player
-        legal = legal_combos(state, player)
 
-        if action is None:
-            if state.current_best is None:
-                raise ValueError("cannot pass while leading a trick")
-            recipient = None
-            if _is_dragon_win(state):
-                recipient = _auto_dragon_recipient(state, state.last_player_to_act)
-            new_state = pass_turn(state, player, dragon_recipient=recipient)
+        if state.phase is Phase.LARGE_TICHU:
+            new_state = self._step_large_tichu(state, player, action)
         else:
-            if action not in legal:
-                raise ValueError("action is not in the current legal action set")
-            # If this play is a lone Dragon single, it may win and end the
-            # round outright (no pass_turn will ever follow to supply this),
-            # so a recipient must be provided up front; play_combo() simply
-            # ignores it when this play doesn't actually end the round.
-            recipient = _auto_dragon_recipient(state, player) if _is_dragon_single(action) else None
-            new_state = play_combo(state, player, action.cards, dragon_recipient=recipient)
+            new_state = self._step_trick_play(state, player, action)
 
         self._state = new_state
 
@@ -100,6 +83,34 @@ class TichuEnv:
             info["team_scores"] = score_round(new_state)
 
         return self._observe_current(reward=0.0, done=done, info=info)
+
+    def _step_large_tichu(self, state: GameState, player: int, action: object) -> GameState:
+        if not isinstance(action, bool):
+            raise ValueError("during Phase.LARGE_TICHU, the action must be True (call) or False (decline)")
+        new_state = decide_large_tichu(state, player, called=action)
+        if new_state.phase is Phase.EXCHANGE:
+            new_state = _auto_exchange(new_state)
+        return new_state
+
+    def _step_trick_play(self, state: GameState, player: int, action: Combo | None) -> GameState:
+        legal = legal_combos(state, player)
+
+        if action is None:
+            if state.current_best is None:
+                raise ValueError("cannot pass while leading a trick")
+            recipient = None
+            if _is_dragon_win(state):
+                recipient = _auto_dragon_recipient(state, state.last_player_to_act)
+            return pass_turn(state, player, dragon_recipient=recipient)
+
+        if action not in legal:
+            raise ValueError("action is not in the current legal action set")
+        # If this play is a lone Dragon single, it may win and end the round
+        # outright (no pass_turn will ever follow to supply this), so a
+        # recipient must be provided up front; play_combo() simply ignores it
+        # when this play doesn't actually end the round.
+        recipient = _auto_dragon_recipient(state, player) if _is_dragon_single(action) else None
+        return play_combo(state, player, action.cards, dragon_recipient=recipient)
 
     def observation(self, player: int | None = None) -> np.ndarray:
         player = self.current_player if player is None else player
@@ -142,11 +153,47 @@ def _auto_dragon_recipient(state: GameState, winner: int) -> int:
 
 
 def _auto_exchange(state: GameState) -> GameState:
-    """Non-strategic placeholder exchange: each player gives their three
-    lowest-ranked cards, one to each opponent in seat order."""
-    gifts: dict[int, dict[int, object]] = {}
+    """Heuristic (non-RL) exchange strategy used until Stage 3 makes exchange
+    a trainable decision: partner gets your best card (or, if you called
+    large tichu, a low card instead -- you keep your strength for yourself),
+    opponents get your two lowest cards. The Mahjong is never given away
+    (its holder becomes the trick leader). The Dog defaults to being treated
+    as your lowest card (goes to an opponent), unless you called large tichu
+    (goes to your partner instead) or your partner did (you keep it, since
+    playing the Dog later hands your partner the lead)."""
+    gifts: dict[int, dict[int, Card]] = {}
     for giver in range(NUM_PLAYERS):
-        hand = sorted(state.hands[giver], key=lambda card: card.rank.value)
-        others = [p for p in range(NUM_PLAYERS) if p != giver]
-        gifts[giver] = {recipient: hand[i] for i, recipient in enumerate(others)}
+        partner = PARTNER[giver]
+        opponents = [p for p in range(NUM_PLAYERS) if p not in (giver, partner)]
+        giver_called = state.large_tichu_calls[giver] is True
+        partner_called = state.large_tichu_calls[partner] is True
+
+        pool = [c for c in state.hands[giver] if c.rank is not Rank.MAHJONG]
+        dog = next((c for c in pool if c.rank is Rank.DOG), None)
+
+        partner_card: Card | None = None
+        if dog is not None and giver_called:
+            partner_card = dog
+            pool.remove(dog)
+        elif dog is not None and partner_called:
+            pool.remove(dog)
+
+        if partner_card is None:
+            if giver_called:
+                partner_card = min(pool, key=lambda c: c.rank.value)
+            else:
+                phoenix = next((c for c in pool if c.rank is Rank.PHOENIX), None)
+                dragon = next((c for c in pool if c.rank is Rank.DRAGON), None)
+                partner_card = phoenix or dragon or max(pool, key=lambda c: c.rank.value)
+            pool.remove(partner_card)
+
+        opponent_cards = sorted(pool, key=lambda c: c.rank.value)[:2]
+        for c in opponent_cards:
+            pool.remove(c)
+
+        gifts[giver] = {
+            opponents[0]: opponent_cards[0],
+            opponents[1]: opponent_cards[1],
+            partner: partner_card,
+        }
     return exchange_cards(state, gifts)

@@ -10,10 +10,17 @@ import torch
 from tichu_env.cards import Card, Rank, Suit
 from tichu_env.combinations import BOMB_TYPES, Combo, ComboType
 from tichu_env.env import StepResult, TichuEnv
-from tichu_env.state import PARTNER, GameState
+from tichu_env.state import PARTNER, GameState, Phase
 
 from agents.policy_network import TichuPolicyValueNet
-from eval.arena import SeatChooser, _resolve_checkpoint, heuristic_chooser, load_checkpoint, policy_chooser
+from eval.arena import (
+    SeatChooser,
+    _resolve_checkpoint,
+    advanced_heuristic_chooser,
+    heuristic_chooser,
+    load_checkpoint,
+    policy_chooser,
+)
 
 DEFAULT_CHECKPOINT_DIR = Path("checkpoints/run1")
 DEFAULT_OUTPUT_DIR = Path("game_logs")
@@ -62,7 +69,7 @@ def cards_str(cards: tuple[Card, ...]) -> str:
     return ", ".join(card_str(c) for c in ordered)
 
 
-def _score_actions(network: TichuPolicyValueNet, result: StepResult) -> list[tuple[Combo | None, float, float]]:
+def _score_actions(network: TichuPolicyValueNet, result: StepResult) -> list[tuple[Combo | bool | None, float, float]]:
     """Scores every legal action for `result`'s current player under `network`.
     Returns (combo, logit, probability) triples sorted best-first by logit."""
     combos = [combo for combo, _ in result.legal_actions]
@@ -77,10 +84,12 @@ def _score_actions(network: TichuPolicyValueNet, result: StepResult) -> list[tup
     return scored
 
 
-def _action_label(combo: Combo | None) -> str:
-    if combo is None:
+def _action_label(action: Combo | bool | None) -> str:
+    if isinstance(action, bool):
+        return "라지 티츄 콜" if action else "라지 티츄 포기"
+    if action is None:
         return "패스"
-    return f"{cards_str(combo.cards)} ({COMBO_TYPE_NAMES[combo.combo_type]})"
+    return f"{cards_str(action.cards)} ({COMBO_TYPE_NAMES[action.combo_type]})"
 
 
 def narrate_round(
@@ -101,7 +110,7 @@ def narrate_round(
     lines: list[str] = []
     result = env.reset()
 
-    lines.append("## 카드 교환 후 시작 손패")
+    lines.append("## 초기 8장 손패 (라지 티츄 결정 전)")
     for seat in range(4):
         lines.append(f"- {seat_labels[seat]}: {cards_str(env.state.hands[seat])}")
     lines.append("")
@@ -132,12 +141,21 @@ def narrate_round(
         for extra in _describe_aftermath(state_before, state_after, combo, seat_labels):
             lines.append(f"    -> {extra}")
 
+        if state_before.phase is not Phase.PLAYING and state_after.phase is Phase.PLAYING:
+            lines.append("")
+            lines.append("## 카드 교환 후 시작 손패")
+            for seat in range(4):
+                lines.append(f"- {seat_labels[seat]}: {cards_str(state_after.hands[seat])}")
+            lines.append("")
+
     lines.append("")
     lines.extend(_describe_round_end(env.state, result.info["team_scores"], seat_labels, team_tags))
     return lines
 
 
-def _describe_action(combo: Combo | None, is_leading: bool) -> str:
+def _describe_action(combo: Combo | bool | None, is_leading: bool) -> str:
+    if isinstance(combo, bool):
+        return "라지 티츄를 선언합니다!" if combo else "라지 티츄를 선언하지 않습니다."
     if combo is None:
         return "패스합니다."
     combo_name = COMBO_TYPE_NAMES[combo.combo_type]
@@ -152,9 +170,12 @@ def _describe_action(combo: Combo | None, is_leading: bool) -> str:
 
 
 def _describe_aftermath(
-    state_before: GameState, state_after: GameState, combo: Combo | None, seat_labels: dict[int, str]
+    state_before: GameState, state_after: GameState, combo: Combo | bool | None, seat_labels: dict[int, str]
 ) -> list[str]:
     notes: list[str] = []
+
+    if isinstance(combo, bool):
+        return notes
 
     if combo is not None and combo.combo_type is ComboType.DOG:
         notes.append(f"카드 없이 트릭이 종료되고, 리드가 {seat_labels[state_after.trick_leader]}에게 넘어갑니다.")
@@ -208,8 +229,20 @@ def _describe_round_end(
         f"- 팀 점수(이번 라운드만): 0+2번 팀({team_tags[0]}) {team_scores[0]:+d}점, "
         f"1+3번 팀({team_tags[1]}) {team_scores[1]:+d}점"
     )
-    lines.append("- 티츄/그랜드 티츄 보너스: 없음 (이 환경은 티츄 콜을 아직 지원하지 않아 항상 콜하지 않은 것으로 처리됩니다)")
+    lines.append(f"- {_describe_tichu_bonuses(state, seat_labels)}")
     return lines
+
+
+def _describe_tichu_bonuses(state: GameState, seat_labels: dict[int, str]) -> str:
+    first = state.finished_order[0] if state.finished_order else None
+    large_callers = [p for p in range(4) if state.large_tichu_calls[p]]
+    if not large_callers:
+        return "그랜드 티츄 보너스: 없음 (아무도 콜하지 않았습니다). (소)티츄 콜은 이 환경에 아직 없어 항상 없음."
+
+    results = ", ".join(
+        f"{seat_labels[p]} {'성공 +200점' if p == first else '실패 -200점'}" for p in large_callers
+    )
+    return f"그랜드 티츄 보너스: {results}. (소)티츄 콜은 이 환경에 아직 없어 항상 없음."
 
 
 def build_preamble(
@@ -230,8 +263,10 @@ def build_preamble(
         f"- 시드: {seed}",
         "",
         "## 참고 (이 환경의 알려진 한계)",
-        "- 그랜드 티츄 콜과 카드 교환은 아직 학습 대상이 아닙니다: 모든 플레이어가 그랜드 티츄를 자동으로 포기하고, "
-        "각자 자신의 가장 낮은 카드 3장을 상대에게 기계적으로 나눠주는 고정 규칙을 씁니다.",
+        "- 그랜드 티츄 콜은 이제 학습 대상입니다(M2 Stage 1): 각 플레이어가 처음 받은 8장만 보고 직접 콜/포기를 "
+        "결정하며, 전원 결정 후에만 나머지 6장이 합쳐집니다.",
+        "- 카드 교환은 아직 학습 대상이 아닙니다: 각자 자신의 가장 낮은 카드 3장을 상대에게 기계적으로 나눠주는 "
+        "고정 규칙을 씁니다.",
         "- (소)티츄 콜 기능 자체가 이 환경에는 없어 아무도 티츄를 부르지 않습니다.",
         "- 마작(1)을 냈을 때의 '소원 카드' 지정도 이 환경은 항상 사용하지 않습니다.",
         "- 각 정책망이 실제로 판단하는 부분은 카드 교환이 끝난 뒤 각 트릭에서 무엇을 내고 언제 패스할지뿐입니다.",
@@ -279,7 +314,8 @@ def _main() -> None:
     parser.add_argument(
         "--opponent",
         default="heuristic",
-        help="Team B: 'heuristic', a checkpoint path, or 'latest' for the newest in --opponent-checkpoint-dir.",
+        help="Team B: 'heuristic', 'advanced_heuristic', a checkpoint path, or 'latest' for the newest in "
+        "--opponent-checkpoint-dir.",
     )
     parser.add_argument(
         "--opponent-checkpoint-dir",
@@ -307,6 +343,12 @@ def _main() -> None:
         opponent_path = None
         scoring_networks = {seat: network_a for seat in range(4)}
         team_b_desc = "휴리스틱 봇(규칙 기반)"
+        opponent_is_policy = False
+    elif args.opponent == "advanced_heuristic":
+        chooser_b = advanced_heuristic_chooser()
+        opponent_path = None
+        scoring_networks = {seat: network_a for seat in range(4)}
+        team_b_desc = "고급 휴리스틱 봇(규칙 기반)"
         opponent_is_policy = False
     else:
         opponent_dir = args.opponent_checkpoint_dir if args.opponent_checkpoint_dir is not None else args.checkpoint_dir
