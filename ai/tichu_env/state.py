@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Sequence
 
@@ -39,6 +39,12 @@ class GameState:
     large_tichu_calls: tuple[bool | None, ...]
     tichu_calls: tuple[bool, ...]
     mahjong_wish: Rank | None
+    # received_from[recipient][giver] = card -- who gave `recipient` which
+    # card during the exchange, populated by exchange_cards(). Empty dicts
+    # before the exchange happens. This is deliberately kept as state (not
+    # derived) since exchanged-card choice is real strategic signal in Tichu
+    # that the observation encoder needs to expose going forward.
+    received_from: tuple[dict[int, Card], ...] = field(default_factory=lambda: tuple({} for _ in range(NUM_PLAYERS)))
 
 
 def deal_new_round(rng: random.Random | None = None) -> GameState:
@@ -115,16 +121,16 @@ def exchange_cards(state: GameState, gifts: dict[int, dict[int, Card]]) -> GameS
             if card not in state.hands[giver]:
                 raise ValueError("cannot give away a card that is not in hand")
 
-    incoming: list[list[Card]] = [[] for _ in range(NUM_PLAYERS)]
+    incoming: list[dict[int, Card]] = [{} for _ in range(NUM_PLAYERS)]
     for giver in range(NUM_PLAYERS):
         for recipient, card in gifts[giver].items():
-            incoming[recipient].append(card)
+            incoming[recipient][giver] = card
 
     new_hands = []
     for player in range(NUM_PLAYERS):
         given_away = set(gifts[player].values())
         kept = tuple(c for c in state.hands[player] if c not in given_away)
-        new_hands.append(kept + tuple(incoming[player]))
+        new_hands.append(kept + tuple(incoming[player].values()))
 
     leader = next(p for p in range(NUM_PLAYERS) if any(c.rank is Rank.MAHJONG for c in new_hands[p]))
     return replace(
@@ -133,6 +139,7 @@ def exchange_cards(state: GameState, gifts: dict[int, dict[int, Card]]) -> GameS
         phase=Phase.PLAYING,
         current_player=leader,
         trick_leader=leader,
+        received_from=tuple(incoming),
     )
 
 

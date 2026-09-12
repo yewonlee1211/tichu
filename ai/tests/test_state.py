@@ -123,6 +123,23 @@ def test_exchange_cards_moves_exactly_one_card_to_each_opponent():
     assert new_state.trick_leader == mahjong_holder
 
 
+def test_exchange_cards_records_who_gave_each_recipient_which_card():
+    state = deal_new_round(random.Random(6))
+    for player in range(NUM_PLAYERS):
+        state = decide_large_tichu(state, player, called=False)
+
+    gifts = {}
+    for giver in range(NUM_PLAYERS):
+        others = [p for p in range(NUM_PLAYERS) if p != giver]
+        gifts[giver] = {recipient: state.hands[giver][i] for i, recipient in enumerate(others)}
+
+    new_state = exchange_cards(state, gifts)
+
+    for giver in range(NUM_PLAYERS):
+        for recipient, given_card in gifts[giver].items():
+            assert new_state.received_from[recipient][giver] == given_card
+
+
 def test_exchange_rejects_giving_the_same_card_twice():
     state = deal_new_round(random.Random(7))
     for player in range(NUM_PLAYERS):

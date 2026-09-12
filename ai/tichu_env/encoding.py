@@ -6,7 +6,7 @@ import numpy as np
 
 from tichu_env.cards import Card, Rank, create_deck
 from tichu_env.combinations import Combo, ComboType
-from tichu_env.state import NUM_PLAYERS, GameState, legal_combos
+from tichu_env.state import NUM_PLAYERS, GameState, Phase, legal_combos
 
 CARD_ORDER: tuple[Card, ...] = create_deck()
 CARD_INDEX: dict[Card, int] = {card: i for i, card in enumerate(CARD_ORDER)}
@@ -19,6 +19,10 @@ NUM_RANKS = len(RANK_ORDER)
 COMBO_TYPE_ORDER: tuple[ComboType, ...] = tuple(ComboType)
 COMBO_TYPE_INDEX: dict[ComboType, int] = {combo_type: i for i, combo_type in enumerate(COMBO_TYPE_ORDER)}
 NUM_COMBO_TYPES = len(COMBO_TYPE_ORDER)
+
+PHASE_ORDER: tuple[Phase, ...] = tuple(Phase)
+PHASE_INDEX: dict[Phase, int] = {phase: i for i, phase in enumerate(PHASE_ORDER)}
+NUM_PHASES = len(PHASE_ORDER)
 
 MAX_HAND_SIZE = 14
 MAX_STRENGTH = float(Rank.DRAGON.value)
@@ -37,9 +41,17 @@ _CURRENT_PLAYER_DIM = NUM_PLAYERS
 _TRICK_LEADER_DIM = NUM_PLAYERS
 _LAST_PLAYER_DIM = 1 + NUM_PLAYERS  # has_last_player, relative seat
 _TICHU_CALLS_DIM = NUM_PLAYERS
-_LARGE_TICHU_CALLS_DIM = NUM_PLAYERS
+# Per seat: [called, declined] -- both zero means "hasn't decided yet" (the
+# large_tichu_calls field is bool | None). Collapsing undecided and declined
+# to the same value would hide real information during the LARGE_TICHU phase.
+_LARGE_TICHU_CALLS_DIM = 2 * NUM_PLAYERS
 _MAHJONG_WISH_DIM = 1 + NUM_RANKS  # no_wish, wished rank
 _FINISHED_DIM = NUM_PLAYERS
+_PHASE_DIM = NUM_PHASES
+# One NUM_CARDS-wide one-hot slot per opponent (relative offsets 1..3), for
+# the card each of them gave the observing player during the exchange.
+_EXCHANGE_RECEIVED_DIM = (NUM_PLAYERS - 1) * NUM_CARDS
+_PASSES_DIM = 1  # normalized count of consecutive passes on the current trick
 
 OBS_DIM = (
     _OWN_HAND_DIM
@@ -54,6 +66,9 @@ OBS_DIM = (
     + _LARGE_TICHU_CALLS_DIM
     + _MAHJONG_WISH_DIM
     + _FINISHED_DIM
+    + _PHASE_DIM
+    + _EXCHANGE_RECEIVED_DIM
+    + _PASSES_DIM
 )
 
 # --- Action layout -----------------------------------------------------------
@@ -78,9 +93,12 @@ def encode_observation(state: GameState, player: int) -> np.ndarray:
         _relative_seat_onehot(state.trick_leader, player),
         _encode_optional_seat(state.last_player_to_act, player),
         np.array([1.0 if state.tichu_calls[seat_of(o)] else 0.0 for o in relative_seats()], dtype=np.float32),
-        np.array([1.0 if state.large_tichu_calls[seat_of(o)] else 0.0 for o in relative_seats()], dtype=np.float32),
+        _encode_large_tichu_calls(state.large_tichu_calls, player),
         _encode_mahjong_wish(state.mahjong_wish),
         np.array([1.0 if seat_of(o) in state.finished_order else 0.0 for o in relative_seats()], dtype=np.float32),
+        _encode_phase(state.phase),
+        _encode_exchange_received(state.received_from[player], player),
+        np.array([state.passes_in_a_row / NUM_PLAYERS], dtype=np.float32),
     ]
     return np.concatenate(parts).astype(np.float32)
 
@@ -141,6 +159,33 @@ def _encode_current_best(combo: Combo | None, strength: float) -> np.ndarray:
     vec[1 + COMBO_TYPE_INDEX[combo.combo_type]] = 1.0
     vec[1 + NUM_COMBO_TYPES] = combo.length / MAX_HAND_SIZE
     vec[1 + NUM_COMBO_TYPES + 1] = strength / MAX_STRENGTH
+    return vec
+
+
+def _encode_large_tichu_calls(calls: Sequence[bool | None], perspective: int) -> np.ndarray:
+    vec = np.zeros(_LARGE_TICHU_CALLS_DIM, dtype=np.float32)
+    for offset in range(NUM_PLAYERS):
+        call = calls[(perspective + offset) % NUM_PLAYERS]
+        if call is True:
+            vec[2 * offset] = 1.0
+        elif call is False:
+            vec[2 * offset + 1] = 1.0
+    return vec
+
+
+def _encode_phase(phase: Phase) -> np.ndarray:
+    vec = np.zeros(_PHASE_DIM, dtype=np.float32)
+    vec[PHASE_INDEX[phase]] = 1.0
+    return vec
+
+
+def _encode_exchange_received(received: dict[int, Card], perspective: int) -> np.ndarray:
+    vec = np.zeros(_EXCHANGE_RECEIVED_DIM, dtype=np.float32)
+    for offset in range(1, NUM_PLAYERS):
+        giver = (perspective + offset) % NUM_PLAYERS
+        card = received.get(giver)
+        if card is not None:
+            vec[(offset - 1) * NUM_CARDS + CARD_INDEX[card]] = 1.0
     return vec
 
 
