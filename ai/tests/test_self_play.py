@@ -17,7 +17,9 @@ from training.self_play import (
     PolicyOpponent,
     Transition,
     _sample_action_index,
+    _split_game_counts,
     generate_self_play_games,
+    generate_self_play_games_parallel,
     play_self_play_round,
 )
 
@@ -316,6 +318,78 @@ def test_play_self_play_round_threads_epsilon_binary_call_into_the_large_tichu_d
         f"epsilon_binary_call=1.0 should force roughly half of large-Tichu decisions to 'call', "
         f"got call_rate={call_rate} over {total} decisions"
     )
+
+
+def test_split_game_counts_evenly_divides_when_there_is_no_remainder():
+    assert _split_game_counts(9, 3) == [3, 3, 3]
+
+
+def test_split_game_counts_gives_the_remainder_to_the_first_workers():
+    counts = _split_game_counts(10, 3)
+
+    assert counts == [4, 3, 3]
+    assert sum(counts) == 10
+
+
+def test_generate_self_play_games_parallel_with_one_worker_matches_sequential_call():
+    # num_workers=1 must short-circuit to generate_self_play_games directly (same rng
+    # draw sequence), not spawn a redundant single subprocess.
+    network = _small_network()
+    sequential = generate_self_play_games(network, num_games=3, rng=random.Random(70))
+    parallel = generate_self_play_games_parallel(network, num_games=3, num_workers=1, rng=random.Random(70))
+
+    assert len(parallel) == len(sequential)
+    for seq_trajectory, par_trajectory in zip(sequential, parallel):
+        assert len(seq_trajectory) == len(par_trajectory)
+        for seq_transition, par_transition in zip(seq_trajectory, par_trajectory):
+            assert seq_transition.chosen_index == par_transition.chosen_index
+            assert seq_transition.reward == par_transition.reward
+            assert np.array_equal(seq_transition.observation, par_transition.observation)
+
+
+def test_generate_self_play_games_parallel_returns_four_trajectories_per_game():
+    network = _small_network()
+    episodes = generate_self_play_games_parallel(network, num_games=6, num_workers=3, rng=random.Random(71))
+
+    assert len(episodes) == 4 * 6
+
+
+def test_generate_self_play_games_parallel_produces_valid_transitions():
+    network = _small_network()
+    episodes = generate_self_play_games_parallel(network, num_games=4, num_workers=2, rng=random.Random(72))
+
+    for trajectory in episodes:
+        for transition in trajectory:
+            assert 0 <= transition.chosen_index < transition.action_vectors.shape[0]
+
+
+def test_generate_self_play_games_parallel_caps_worker_count_at_num_games():
+    network = _small_network()
+    episodes = generate_self_play_games_parallel(network, num_games=2, num_workers=10, rng=random.Random(73))
+
+    assert len(episodes) == 4 * 2
+
+
+def test_generate_self_play_games_parallel_is_deterministic_for_a_fixed_seed_and_worker_count():
+    network = _small_network()
+    first = generate_self_play_games_parallel(network, num_games=5, num_workers=3, rng=random.Random(99))
+    second = generate_self_play_games_parallel(network, num_games=5, num_workers=3, rng=random.Random(99))
+
+    first_rewards = sorted(t.reward for trajectory in first for t in trajectory)
+    second_rewards = sorted(t.reward for trajectory in second for t in trajectory)
+    assert first_rewards == second_rewards
+
+
+def test_generate_self_play_games_parallel_propagates_worker_exceptions():
+    network = _small_network()
+
+    def boom():
+        raise RuntimeError("self-play worker exploded")
+
+    with pytest.raises(RuntimeError, match="self-play worker exploded"):
+        generate_self_play_games_parallel(
+            network, num_games=4, num_workers=2, rng=random.Random(50), opponent_factory=boom
+        )
 
 
 def test_play_self_play_round_threads_epsilon_binary_call_into_the_tichu_call_decision_too():

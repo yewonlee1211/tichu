@@ -23,6 +23,7 @@ from training.self_play import (
     PolicyOpponent,
     Transition,
     generate_self_play_games,
+    generate_self_play_games_parallel,
 )
 
 DEFAULT_CHECKPOINT_DIR = Path("checkpoints")
@@ -351,6 +352,7 @@ def train(
     ppo_epochs: int | None = None,
     clip_epsilon: float = DEFAULT_CLIP_EPSILON,
     epsilon_binary_call: float = DEFAULT_EPSILON_BINARY_CALL,
+    self_play_workers: int = 1,
     rng: random.Random | None = None,
     checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
     checkpoint_every: int = 10,
@@ -379,6 +381,16 @@ def train(
     choice instead of policy-weighted sampling, on `network`'s own turns
     only. Left at its default of 0.0, behavior is unchanged from before this
     parameter existed.
+
+    `self_play_workers`, left at its default of 1, calls `generate_self_play_games`
+    directly, exactly as before this parameter existed (including its exact RNG draw
+    sequence, and its visibility to tests that monkeypatch that name). Set above 1, each
+    iteration's self-play instead runs via `generate_self_play_games_parallel`, splitting
+    `games_per_iteration` across that many subprocesses -- see that function's docstring
+    for what this does and does not preserve about reproducibility (profiling in the
+    `2026-07-23-m2-training-speed` session found self-play generation, not the loss/
+    backward pass, dominates iteration time, and that most of it is CPU-bound Python/
+    single-decision network-forward work that parallelizes across cores).
 
     `opponent_pool`, if set, takes precedence over `opponent`: each game's team1
     opponent is instead an equal-weight random draw among {a frozen snapshot from
@@ -487,6 +499,7 @@ def train(
             ppo_epochs=ppo_epochs,
             clip_epsilon=clip_epsilon,
             epsilon_binary_call=epsilon_binary_call,
+            self_play_workers=self_play_workers,
             checkpoint_dir=checkpoint_dir,
             checkpoint_every=checkpoint_every,
             metrics_path=metrics_path,
@@ -512,6 +525,7 @@ def _run_training_loop(
     ppo_epochs: int | None,
     clip_epsilon: float,
     epsilon_binary_call: float,
+    self_play_workers: int,
     checkpoint_dir: Path,
     checkpoint_every: int,
     metrics_path: Path,
@@ -534,14 +548,25 @@ def _run_training_loop(
             opponent_factory = (
                 (lambda: _sample_pool_mix_opponent(opponent_pool, rng)) if opponent_pool is not None else None
             )
-            episodes = generate_self_play_games(
-                network,
-                games_per_iteration,
-                rng=rng,
-                opponent=opponent,
-                opponent_factory=opponent_factory,
-                epsilon_binary_call=epsilon_binary_call,
-            )
+            if self_play_workers <= 1:
+                episodes = generate_self_play_games(
+                    network,
+                    games_per_iteration,
+                    rng=rng,
+                    opponent=opponent,
+                    opponent_factory=opponent_factory,
+                    epsilon_binary_call=epsilon_binary_call,
+                )
+            else:
+                episodes = generate_self_play_games_parallel(
+                    network,
+                    games_per_iteration,
+                    num_workers=self_play_workers,
+                    rng=rng,
+                    opponent=opponent,
+                    opponent_factory=opponent_factory,
+                    epsilon_binary_call=epsilon_binary_call,
+                )
 
             if ppo_epochs is not None:
                 for _ in range(ppo_epochs):
@@ -672,6 +697,15 @@ def _main() -> None:
         "this probability, on the network's own turns, instead of always sampling from its "
         "policy.",
     )
+    parser.add_argument(
+        "--self-play-workers",
+        type=int,
+        default=1,
+        help="Generate each iteration's self-play games across this many subprocesses "
+        "instead of sequentially in-process. Profiling found self-play generation "
+        "dominates iteration time, so this is the main lever for wall-clock training "
+        "speed; a good starting point is the container's CPU count.",
+    )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--checkpoint-every", type=int, default=10)
     parser.add_argument("--metrics-path", type=Path, default=DEFAULT_METRICS_PATH)
@@ -746,6 +780,7 @@ def _main() -> None:
         ppo_epochs=args.ppo_epochs,
         clip_epsilon=args.clip_epsilon,
         epsilon_binary_call=args.epsilon_binary_call,
+        self_play_workers=args.self_play_workers,
         rng=rng,
         checkpoint_dir=args.checkpoint_dir,
         checkpoint_every=args.checkpoint_every,

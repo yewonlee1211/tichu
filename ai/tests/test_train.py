@@ -39,6 +39,22 @@ def test_train_runs_the_requested_number_of_iterations_without_crashing(tmp_path
     assert [m.iteration for m in history] == [1, 2, 3]
 
 
+def test_train_supports_self_play_workers_greater_than_one(tmp_path: Path):
+    history = train(
+        _small_network(),
+        iterations=2,
+        games_per_iteration=4,
+        self_play_workers=2,
+        rng=random.Random(80),
+        checkpoint_dir=tmp_path / "checkpoints",
+        checkpoint_every=100,
+        metrics_path=tmp_path / "metrics.csv",
+    )
+
+    assert [m.iteration for m in history] == [1, 2]
+    assert all(m.games == 4 for m in history)
+
+
 def test_train_writes_one_metrics_row_per_iteration(tmp_path: Path):
     metrics_path = tmp_path / "metrics.csv"
 

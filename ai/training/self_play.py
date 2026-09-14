@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import multiprocessing as mp
 import random
 from dataclasses import dataclass, replace
+from multiprocessing.queues import Queue as MPQueue
 from typing import Callable
 
 import numpy as np
@@ -237,4 +239,126 @@ def generate_self_play_games(
         episodes.extend(
             play_self_play_round(network, rng, opponent=game_opponent, epsilon_binary_call=epsilon_binary_call)
         )
+    return episodes
+
+
+def _split_game_counts(num_games: int, num_workers: int) -> list[int]:
+    """Divides `num_games` as evenly as possible across `num_workers` worker
+    processes -- the first `num_games % num_workers` workers get one extra
+    game so every game is covered exactly once with no worker left more than
+    one game ahead of another."""
+    base, remainder = divmod(num_games, num_workers)
+    return [base + 1 if worker_index < remainder else base for worker_index in range(num_workers)]
+
+
+def _run_self_play_worker(
+    network: TichuPolicyValueNet,
+    num_games: int,
+    seed: int,
+    opponent: object | None,
+    opponent_factory: Callable[[], object | None] | None,
+    epsilon_binary_call: float,
+    result_queue: MPQueue,
+) -> None:
+    """Entry point for one self-play worker process (see
+    `generate_self_play_games_parallel`). Always puts exactly one
+    `("ok", episodes)` or `("error", exception)` tuple onto `result_queue`,
+    never letting an exception propagate unreported -- otherwise the
+    parent's matching `result_queue.get()` would hang forever waiting on a
+    worker that died before producing output. `torch.set_num_threads(1)`
+    stops this worker's own BLAS intra-op threading from oversubscribing
+    the CPU cores `generate_self_play_games_parallel` is already splitting
+    across worker *processes* -- without it, N worker processes each
+    spawning torch's own multi-threaded default would all contend for the
+    same cores."""
+    try:
+        torch.set_num_threads(1)
+        episodes = generate_self_play_games(
+            network,
+            num_games,
+            rng=random.Random(seed),
+            opponent=opponent,
+            opponent_factory=opponent_factory,
+            epsilon_binary_call=epsilon_binary_call,
+        )
+        result_queue.put(("ok", episodes))
+    except Exception as exc:  # noqa: BLE001 -- re-raised in the parent process via the queue
+        result_queue.put(("error", exc))
+
+
+def generate_self_play_games_parallel(
+    network: TichuPolicyValueNet,
+    num_games: int,
+    num_workers: int,
+    rng: random.Random | None = None,
+    opponent: object | None = None,
+    opponent_factory: Callable[[], object | None] | None = None,
+    epsilon_binary_call: float = DEFAULT_EPSILON_BINARY_CALL,
+) -> list[list[Transition]]:
+    """Process-parallel counterpart to `generate_self_play_games`: splits
+    `num_games` across up to `num_workers` subprocesses (each running the
+    exact same sequential function on its own share) and concatenates their
+    results, in no particular order -- callers already treat the returned
+    list as an unordered bag of trajectories (see `compute_reinforce_loss`),
+    so cross-worker ordering doesn't matter.
+
+    `num_workers <= 1` (or `num_games < 2`) skips subprocesses entirely and
+    calls `generate_self_play_games` directly, so single-worker behavior
+    (including its exact RNG draw sequence) is unchanged from before this
+    function existed -- this is what lets `train()` default to
+    `self_play_workers=1` without disturbing any existing run's
+    reproducibility, or its `generate_self_play_games`-monkeypatching tests.
+
+    Each worker gets its own `random.Random(seed)`, seeded from a value
+    drawn off the *caller's* `rng` (one `rng.randrange(...)` draw per
+    worker, made here in the parent process before any subprocess starts) --
+    worker processes share no memory once running, so per-worker seeding is
+    what keeps this call reproducible for a fixed `(rng state, num_games,
+    num_workers)`, even though it does not reproduce single-process
+    `generate_self_play_games`'s own draw sequence.
+
+    Uses the `fork` start method unconditionally (this project's `ai/` code
+    only ever runs inside its Linux Docker container -- see CLAUDE.md),
+    which lets `network`/`opponent`/`opponent_factory` (some of these, like
+    an opponent-pool-driven factory closure, are not picklable) reach worker
+    processes for free via copy-on-write instead of needing pickling -- only
+    each worker's returned episodes travel back through an explicit
+    `Queue`, where pickling numpy-array-bearing `Transition`s is cheap and
+    unavoidable either way."""
+    rng = rng if rng is not None else random.Random()
+    effective_workers = max(1, min(num_workers, num_games))
+    if effective_workers <= 1:
+        return generate_self_play_games(
+            network,
+            num_games,
+            rng=rng,
+            opponent=opponent,
+            opponent_factory=opponent_factory,
+            epsilon_binary_call=epsilon_binary_call,
+        )
+
+    game_counts = _split_game_counts(num_games, effective_workers)
+    seeds = [rng.randrange(2**31) for _ in game_counts]
+
+    ctx = mp.get_context("fork")
+    result_queue: MPQueue = ctx.Queue()
+    processes = [
+        ctx.Process(
+            target=_run_self_play_worker,
+            args=(network, count, seed, opponent, opponent_factory, epsilon_binary_call, result_queue),
+        )
+        for count, seed in zip(game_counts, seeds)
+    ]
+    for process in processes:
+        process.start()
+
+    results = [result_queue.get() for _ in processes]
+    for process in processes:
+        process.join()
+
+    episodes: list[list[Transition]] = []
+    for status, payload in results:
+        if status == "error":
+            raise payload
+        episodes.extend(payload)
     return episodes
