@@ -19,6 +19,7 @@ from training.opponent_pool import OpponentPool
 from training.self_play import (
     DEFAULT_EPSILON_BINARY_CALL,
     HeuristicOpponentAdapter,
+    HybridOpponent,
     PolicyOpponent,
     Transition,
     generate_self_play_games,
@@ -641,6 +642,16 @@ def _main() -> None:
         help="Cap on the opponent pool's size; oldest snapshots are evicted first once exceeded.",
     )
     parser.add_argument(
+        "--hybrid-opponent-checkpoint",
+        type=Path,
+        default=None,
+        help="Fix team1's seats to a HybridOpponent wrapping this checkpoint_*.pt: trick play "
+        "comes from the checkpoint's own policy, but the large-Tichu/(small) Tichu call "
+        "decisions come from AdvancedHeuristicAgent's hand-strength rules instead of the "
+        "checkpoint's own (collapsed) call policy. Mutually exclusive with --heuristic-opponent "
+        "and --opponent-pool.",
+    )
+    parser.add_argument(
         "--ppo-epochs",
         type=int,
         default=None,
@@ -687,8 +698,13 @@ def _main() -> None:
     )
     args = parser.parse_args()
 
-    if args.heuristic_opponent and args.opponent_pool:
-        parser.error("--heuristic-opponent and --opponent-pool are mutually exclusive")
+    opponent_modes_set = sum(
+        [args.heuristic_opponent, args.opponent_pool, args.hybrid_opponent_checkpoint is not None]
+    )
+    if opponent_modes_set > 1:
+        parser.error(
+            "--heuristic-opponent, --opponent-pool, and --hybrid-opponent-checkpoint are mutually exclusive"
+        )
     if args.warm_start_from is not None and (args.resume or args.resume_from is not None):
         parser.error("--warm-start-from and --resume/--resume-from are mutually exclusive")
 
@@ -706,6 +722,10 @@ def _main() -> None:
         migrate_action_encoder_input_layer(network, args.warm_start_from)
     rng = random.Random(args.seed) if args.seed is not None else None
     opponent = AdvancedHeuristicAgent() if args.heuristic_opponent else None
+    if args.hybrid_opponent_checkpoint is not None:
+        hybrid_network = TichuPolicyValueNet()
+        hybrid_network.load_state_dict(torch.load(args.hybrid_opponent_checkpoint, weights_only=True))
+        opponent = HybridOpponent(hybrid_network, rng if rng is not None else random.Random())
     opponent_pool = None
     if args.opponent_pool:
         opponent_pool = OpponentPool(max_size=args.opponent_pool_max_size)

@@ -7,15 +7,46 @@ from tichu_env.scoring import TEAM_OF
 
 from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
-from tichu_env.encoding import encode_tichu_action
+from tichu_env.cards import Card, Rank, Suit
+from tichu_env.encoding import encode_large_tichu_action, encode_legal_actions, encode_tichu_action
+from tichu_env.state import NUM_PLAYERS as _NUM_PLAYERS
+from tichu_env.state import GameState, Phase
 
 from training.self_play import (
+    HybridOpponent,
     PolicyOpponent,
     Transition,
     _sample_action_index,
     generate_self_play_games,
     play_self_play_round,
 )
+
+
+def _card(rank: Rank, suit: Suit = Suit.SWORD) -> Card:
+    return Card(rank=rank, suit=suit)
+
+
+def _make_playing_state(hands: dict[int, list[Card]], **overrides) -> GameState:
+    base = dict(
+        hands=tuple(tuple(hands.get(i, [])) for i in range(_NUM_PLAYERS)),
+        pending_final_cards=tuple(() for _ in range(_NUM_PLAYERS)),
+        phase=Phase.PLAYING,
+        current_player=0,
+        trick_leader=0,
+        trick_cards=(),
+        current_best=None,
+        current_strength=0.0,
+        last_player_to_act=None,
+        passes_in_a_row=0,
+        finished_order=(),
+        collected_tricks=tuple(() for _ in range(_NUM_PLAYERS)),
+        large_tichu_calls=(True, True, True, True),
+        tichu_calls=(False, False, False, False),
+        tichu_decided=(True, True, True, True),
+        mahjong_wish=None,
+    )
+    base.update(overrides)
+    return GameState(**base)
 
 
 def _small_network() -> TichuPolicyValueNet:
@@ -110,6 +141,65 @@ def test_policy_opponent_plays_a_frozen_network_as_a_valid_self_play_opponent():
             assert trajectories[player], "team0 (the trainable network) should still record its own turns"
         else:
             assert trajectories[player] == [], "team1 seats played by PolicyOpponent record nothing"
+
+
+def test_hybrid_opponent_uses_the_advanced_heuristic_rule_for_large_tichu():
+    network = _small_network()
+    strong_hand = [_card(Rank.ACE, Suit.SWORD), _card(Rank.ACE, Suit.PAGODA), _card(Rank.TWO)]
+    weak_hand = [_card(Rank.TWO), _card(Rank.THREE), _card(Rank.FOUR)]
+    legal_actions = [(True, encode_large_tichu_action(True)), (False, encode_large_tichu_action(False))]
+    opponent = HybridOpponent(network, random.Random(1))
+
+    strong_state = _make_playing_state({0: strong_hand}, phase=Phase.LARGE_TICHU, current_player=0)
+    weak_state = _make_playing_state({0: weak_hand}, phase=Phase.LARGE_TICHU, current_player=0)
+
+    assert opponent.choose_action(strong_state, legal_actions) is True
+    assert opponent.choose_action(weak_state, legal_actions) is False
+
+
+def test_hybrid_opponent_uses_the_advanced_heuristic_rule_for_the_tichu_call():
+    network = _small_network()
+    filler = [_card(rank, suit) for rank in (Rank.SIX, Rank.SEVEN, Rank.EIGHT, Rank.NINE) for suit in Suit]
+    strong_hand = ([_card(Rank.ACE, Suit.SWORD), _card(Rank.ACE, Suit.PAGODA), _card(Rank.DRAGON, Suit.SPECIAL)] + filler)[
+        :14
+    ]
+    weak_hand = ([_card(Rank.ACE, Suit.SWORD)] + filler)[:14]
+    legal_actions = [(True, encode_tichu_action(True)), (False, encode_tichu_action(False))]
+    opponent = HybridOpponent(network, random.Random(2))
+
+    strong_state = _make_playing_state({0: strong_hand}, current_player=0, tichu_decided=(False, True, True, True))
+    weak_state = _make_playing_state({0: weak_hand}, current_player=0, tichu_decided=(False, True, True, True))
+
+    assert opponent.choose_action(strong_state, legal_actions) is True
+    assert opponent.choose_action(weak_state, legal_actions) is False
+
+
+def test_hybrid_opponent_defers_trick_play_to_the_wrapped_network_like_policy_opponent():
+    # Directly compare HybridOpponent's trick-play choice against PolicyOpponent's,
+    # from identically-seeded RNGs -- they must sample identically since both
+    # delegate to the very same mechanism for non-bool decisions.
+    network = _small_network()
+    state = _make_playing_state({0: [_card(Rank.FIVE), _card(Rank.SEVEN)]}, current_player=0, trick_leader=0)
+    legal_actions = encode_legal_actions(state, 0)
+
+    hybrid_choice = HybridOpponent(network, random.Random(42)).choose_action(state, legal_actions)
+    policy_choice = PolicyOpponent(network, random.Random(42)).choose_action(state, legal_actions)
+
+    assert hybrid_choice == policy_choice
+
+
+def test_hybrid_opponent_plays_as_a_valid_self_play_opponent():
+    network = _small_network()
+    frozen = _small_network()
+    trajectories = play_self_play_round(
+        network, rng=random.Random(30), opponent=HybridOpponent(frozen, random.Random(31))
+    )
+
+    for player in range(4):
+        if TEAM_OF[player] == TEAM_OF[0]:
+            assert trajectories[player], "team0 (the trainable network) should still record its own turns"
+        else:
+            assert trajectories[player] == [], "team1 seats played by HybridOpponent record nothing"
 
 
 def test_generate_self_play_games_calls_the_opponent_factory_once_per_game():

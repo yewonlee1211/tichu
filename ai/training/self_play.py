@@ -13,6 +13,7 @@ from tichu_env.env import TichuEnv
 from tichu_env.scoring import TEAM_OF
 from tichu_env.state import NUM_PLAYERS, GameState
 
+from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 
 LegalAction = tuple[Combo | None, np.ndarray]
@@ -87,6 +88,35 @@ class PolicyOpponent:
             ).numpy()
         chosen_index = self._rng.choices(range(len(combos)), weights=probs.tolist(), k=1)[0]
         return combos[chosen_index]
+
+
+class HybridOpponent:
+    """Adapts a frozen `TichuPolicyValueNet` for trick play (delegating to a
+    `PolicyOpponent` internally, so it samples identically) combined with
+    `AdvancedHeuristicAgent`'s hand-strength rules for the large-Tichu and
+    (small) Tichu call/decline decisions.
+
+    Motivation: the trainee's own large-Tichu/Tichu-call policy has
+    collapsed to always-decline regardless of hand strength (see
+    .claude/plans/tichu-m2-action-space-curriculum.plan.md's "5단계와의
+    연결"), so mirroring the trainee's own current weights for an opponent
+    gives it essentially no exposure to an opponent whose calls actually
+    correlate with hand quality. A plain `AdvancedHeuristicAgent` opponent
+    fixes that but trades down to a much weaker, simple-greedy trick-play
+    style. `HybridOpponent` keeps a specific checkpoint's trick-play
+    strength while swapping in the heuristic's hand-quality-correlated
+    calls, so team0 gets both a strong trick-play sparring partner and a
+    realistic "opponent called Tichu with a good hand" signal to condition
+    on."""
+
+    def __init__(self, network: TichuPolicyValueNet, rng: random.Random):
+        self._policy_opponent = PolicyOpponent(network, rng)
+        self._heuristic = AdvancedHeuristicAgent()
+
+    def choose_action(self, state: GameState, legal_actions: list[LegalAction]) -> Combo | bool | None:
+        if any(isinstance(action, bool) for action, _ in legal_actions):
+            return self._heuristic.choose_action(state, legal_actions)
+        return self._policy_opponent.choose_action(state, legal_actions)
 
 
 @dataclass(frozen=True)
