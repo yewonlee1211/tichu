@@ -39,6 +39,8 @@ export function legalCombosForView(view: PlayerView): Combo[] {
     largeTichuCalls: view.largeTichuCalls,
     tichuCalls: view.tichuCalls,
     mahjongWish: view.mahjongWish,
+    receivedFrom: Array.from({ length: NUM_PLAYERS }, () => ({})),
+    tichuDecided: Array.from({ length: NUM_PLAYERS }, () => false),
   };
 
   return legalCombos(fakeState, view.viewerSeat);

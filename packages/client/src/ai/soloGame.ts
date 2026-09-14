@@ -14,10 +14,12 @@ import {
   callTichu,
   dealNewRound,
   decideLargeTichu,
+  decideTichu,
   encodeLegalActions,
   encodeObservation,
   err,
   exchangeCards,
+  isAwaitingTichuDecision,
   isGameOver,
   legalCombos,
   ok,
@@ -26,6 +28,7 @@ import {
   scoreRound,
 } from '@tichu/shared';
 import { decideAiMove, type SelectionStrategy } from './decideAiMove';
+import { shouldCallLargeTichu, shouldCallTichu } from './heuristicCalls';
 
 /** The human always sits seat 0; the other three seats are AI-controlled. This
  * is a fixed MVP simplification (no seat picker) -- see
@@ -123,12 +126,16 @@ function autoExchangeGifts(state: GameState, giver: number): Record<number, Card
  * Never makes a network call itself -- all inference runs in-process against the
  * already-loaded `session` (see `loadModel.ts` for how that session is obtained).
  *
- * Large Tichu and card exchange have no corresponding action head in the trained
- * model (`ai/tichu_env/env.py`'s `TichuEnv` auto-resolves both with fixed
- * non-strategic defaults during self-play), so AI seats mirror those exact
- * defaults here: always decline Large Tichu, never call (small) Tichu, and
- * exchange via `autoExchangeGifts`. Only trick-play (which combo to play, or
- * pass) is an actual model decision.
+ * Large Tichu, the (small) Tichu call, and card exchange have no corresponding
+ * action head in this deployment's trained model (see CLAUDE.md's "AI model
+ * asset deployment" -- the M2 curriculum's Stage 4 found the network's own
+ * call/decline policy collapsed to always-decline, so this deployment never
+ * routes those three decisions through the network at all). AI seats instead
+ * decide all three the same fixed way `ai/training/self_play.py`'s
+ * `HybridOpponent` trained against: Large Tichu and (small) Tichu via
+ * `heuristicCalls.ts`'s hand-strength gates (mirroring
+ * `AdvancedHeuristicAgent`), and exchange via `autoExchangeGifts`. Only
+ * trick-play (which combo to play, or pass) is an actual model decision.
  *
  * Invariant: after any `human*` method resolves with `{ ok: true }`, either
  * `getState().phase === Phase.RoundOver` or `getState().currentPlayer ===
@@ -235,7 +242,8 @@ export class SoloGame {
 
   private autoDecideAiLargeTichu(): void {
     for (const seat of AI_SEATS) {
-      this.state = mustOk(decideLargeTichu(this.state, seat, false));
+      const called = shouldCallLargeTichu(this.state.hands[seat]!);
+      this.state = mustOk(decideLargeTichu(this.state, seat, called));
     }
   }
 
@@ -265,6 +273,18 @@ export class SoloGame {
 
   private async playOneAiTurn(): Promise<void> {
     const seat = this.state.currentPlayer;
+
+    // The (small) Tichu call/decline decision (see isAwaitingTichuDecision)
+    // is heuristic-decided, never routed through the model -- see this
+    // class's doc comment. Resolving it doesn't advance currentPlayer, so
+    // the next iteration of advanceAiTurns's loop lands back on this same
+    // seat, now past the decision, to actually play.
+    if (isAwaitingTichuDecision(this.state, seat)) {
+      const called = shouldCallTichu(this.state.hands[seat]!);
+      this.state = mustOk(decideTichu(this.state, seat, called));
+      return;
+    }
+
     const observation = encodeObservation(this.state, seat);
     const candidates = encodeLegalActions(this.state, seat);
     const chosenIndex = await decideAiMove(
@@ -273,7 +293,11 @@ export class SoloGame {
       this.session,
       this.strategy,
     );
-    const chosen = candidates[chosenIndex]!.combo;
+    const chosenAction = candidates[chosenIndex]!.action;
+    if (typeof chosenAction === 'boolean') {
+      throw new Error('soloGame invariant violated: trick-play candidates should never include a boolean action');
+    }
+    const chosen = chosenAction;
 
     if (chosen === null) {
       // Whoever actually won with the Dragon already decided the recipient

@@ -27,7 +27,9 @@ from tichu_env.state import (
     Phase,
     deal_new_round,
     decide_large_tichu,
+    decide_tichu,
     exchange_cards,
+    is_awaiting_tichu_decision,
     pass_turn,
     play_combo,
 )
@@ -102,6 +104,8 @@ def ser_state(state: GameState) -> dict:
         "largeTichuCalls": list(state.large_tichu_calls),
         "tichuCalls": list(state.tichu_calls),
         "mahjongWish": state.mahjong_wish.name if state.mahjong_wish is not None else None,
+        "receivedFrom": [{str(giver): ser_card(c) for giver, c in d.items()} for d in state.received_from],
+        "tichuDecided": list(state.tichu_decided),
     }
 
 
@@ -113,8 +117,14 @@ def ser_observation(state: GameState, player: int) -> list:
     return ser_vec(encode_observation(state, player))
 
 
+def ser_action(action: Combo | bool | None) -> dict | bool | None:
+    if action is None or isinstance(action, bool):
+        return action
+    return ser_combo(action)
+
+
 def ser_legal_actions(state: GameState, player: int) -> list:
-    return [{"combo": ser_combo(combo), "vector": ser_vec(vec)} for combo, vec in encode_legal_actions(state, player)]
+    return [{"action": ser_action(action), "vector": ser_vec(vec)} for action, vec in encode_legal_actions(state, player)]
 
 
 def write_fixture(name: str, description: str, payload: dict) -> None:
@@ -131,7 +141,9 @@ def write_fixture(name: str, description: str, payload: dict) -> None:
 def build_normal_round() -> dict:
     """Deal (seed=1) -> everyone declines large tichu -> non-strategic exchange
     (lowest 3 cards, one per opponent, mirroring env.py's _auto_exchange) ->
-    one ordinary trick: leader opens a single, the other three pass in turn."""
+    leader declines the (small) Tichu call at the mandatory pre-first-play
+    decision point (see state.is_awaiting_tichu_decision) -> one ordinary
+    trick: leader opens a single, the other three pass in turn."""
     state = deal_new_round(random.Random(1))
     dealt = ser_state(state)
 
@@ -148,6 +160,8 @@ def build_normal_round() -> dict:
     after_exchange = ser_state(state)
 
     leader = state.current_player
+    state = decide_tichu(state, leader, called=False)
+    after_tichu_decision = ser_state(state)
     observation_before_lead = ser_observation(state, leader)
     legal_actions_before_lead = ser_legal_actions(state, leader)
 
@@ -165,6 +179,7 @@ def build_normal_round() -> dict:
         "dealtState": dealt,
         "afterLargeTichuState": after_large_tichu,
         "afterExchangeState": after_exchange,
+        "afterTichuDecisionState": after_tichu_decision,
         "leader": leader,
         "observationBeforeLead": observation_before_lead,
         "legalActionsBeforeLead": legal_actions_before_lead,
@@ -316,6 +331,61 @@ def build_grand_tichu() -> dict:
     }
 
 
+
+# --- Scenario 6: tichu call decision ---------------------------------------------
+
+
+def build_tichu_call_decision() -> dict:
+    """Deal (seed=3) -> large tichu decisions mix True/False/True/False
+    (exercises the two-bit called/declined observation encoding) -> exchange
+    (also populates received_from) -> the leader is offered the (small) Tichu
+    call/decline decision before their first play (see
+    state.is_awaiting_tichu_decision / decide_tichu), while a non-current
+    player sees no legal actions yet; the leader calls it, then normal
+    trick-play legal actions resume."""
+    state = deal_new_round(random.Random(3))
+    dealt = ser_state(state)
+
+    calls = [True, False, True, False]
+    for player in range(NUM_PLAYERS):
+        state = decide_large_tichu(state, player, called=calls[player])
+    after_large_tichu = ser_state(state)
+    observation_after_large_tichu = ser_observation(state, 0)
+
+    gifts = {}
+    for giver in range(NUM_PLAYERS):
+        hand = sorted(state.hands[giver], key=lambda c: c.rank.value)
+        others = [p for p in range(NUM_PLAYERS) if p != giver]
+        gifts[giver] = {recipient: hand[i] for i, recipient in enumerate(others)}
+    state = exchange_cards(state, gifts)
+    after_exchange = ser_state(state)
+
+    leader = state.current_player
+    other = (leader + 1) % NUM_PLAYERS
+    awaiting_before_decision = is_awaiting_tichu_decision(state, leader)
+    legal_actions_for_other_before_decision = ser_legal_actions(state, other)
+    legal_actions_before_decision = ser_legal_actions(state, leader)
+
+    state = decide_tichu(state, leader, called=True)
+    after_tichu_decision = ser_state(state)
+    awaiting_after_decision = is_awaiting_tichu_decision(state, leader)
+    legal_actions_after_decision = ser_legal_actions(state, leader)
+
+    return {
+        "dealtState": dealt,
+        "afterLargeTichuState": after_large_tichu,
+        "observationAfterLargeTichu": observation_after_large_tichu,
+        "afterExchangeState": after_exchange,
+        "leader": leader,
+        "awaitingBeforeDecision": awaiting_before_decision,
+        "legalActionsForOtherBeforeDecision": legal_actions_for_other_before_decision,
+        "legalActionsBeforeDecision": legal_actions_before_decision,
+        "afterTichuDecisionState": after_tichu_decision,
+        "awaitingAfterDecision": awaiting_after_decision,
+        "legalActionsAfterDecision": legal_actions_after_decision,
+    }
+
+
 def main() -> None:
     scenarios = [
         ("normal_round", "정상 라운드: 딜 -> 그랜드 티츄 전원 패스 -> 교환 -> 한 트릭 완료", build_normal_round),
@@ -323,6 +393,7 @@ def main() -> None:
         ("double_out", "더블 아웃: 파트너 두 명이 1/2등으로 동시에 아웃되며 라운드 종료", build_double_out),
         ("last_card_handover", "마지막 카드 이관: 4등의 잔여 패 점수가 상대팀으로 이관", build_last_card_handover),
         ("grand_tichu", "그랜드 티츄: 성공한 그랜드 티츄 콜의 스코어링", build_grand_tichu),
+        ("tichu_call_decision", "티츄 콜 결정: 라지 티츄 2비트 인코딩 + 작은 티츄 콜/포기 결정 지점", build_tichu_call_decision),
     ]
     for name, description, builder in scenarios:
         write_fixture(name, description, builder())

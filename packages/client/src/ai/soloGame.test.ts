@@ -94,10 +94,18 @@ async function playRoundToCompletion(game: SoloGame): Promise<void> {
 }
 
 describe('SoloGame construction', () => {
-  it('auto-declines Large Tichu for the three AI seats but leaves the human undecided', () => {
-    const game = new SoloGame({ session: stubSession() });
+  it('auto-decides Large Tichu for the three AI seats (heuristic, by hand strength) but leaves the human undecided', () => {
+    // createDeck()'s canonical order deals seats 1-3 zero Aces by default
+    // (see cards.ts's suit-major ordering); swap two Aces into seat 1's
+    // 8-card hand specifically so this test can assert the heuristic
+    // actually varies with hand quality, not just always declining.
+    const deck = [...createDeck()];
+    [deck[14], deck[12]] = [deck[12]!, deck[14]!];
+    [deck[15], deck[25]] = [deck[25]!, deck[15]!];
 
-    expect(game.getState().largeTichuCalls).toEqual([null, false, false, false]);
+    const game = new SoloGame({ session: stubSession(), deck });
+
+    expect(game.getState().largeTichuCalls).toEqual([null, true, false, false]);
     expect(game.getState().phase).toBe(Phase.LargeTichu);
   });
 
@@ -501,6 +509,38 @@ describe('SoloGame: AI turn pacing', () => {
   });
 });
 
+describe('SoloGame: (small) Tichu call decision for AI seats', () => {
+  function deckWithHumanMahjongFirst(): Card[] {
+    const deck = [...createDeck()];
+    const mahjongIndex = deck.findIndex((c) => c.rank === Rank.Mahjong);
+    const [mahjong] = deck.splice(mahjongIndex, 1);
+    deck.unshift(mahjong!);
+    return deck;
+  }
+
+  function giveMahjongToSeat1(game: SoloGame): Record<number, Card> {
+    const hand = game.getState().hands[HUMAN_SEAT]!;
+    const mahjong = hand.find((c) => c.rank === Rank.Mahjong)!;
+    const others = hand.filter((c) => c.rank !== Rank.Mahjong).sort((a, b) => a.rank - b.rank);
+    return { 1: mahjong, 2: others[0]!, 3: others[1]! };
+  }
+
+  it("resolves the AI leader's (small) Tichu decision (heuristic, never the model) before its leading play, instead of looping forever on it", async () => {
+    const game = new SoloGame({ session: stubSession(), deck: deckWithHumanMahjongFirst() });
+    game.decideHumanLargeTichu(false);
+
+    const result = await game.submitHumanExchange(giveMahjongToSeat1(game));
+
+    expect(result.ok).toBe(true);
+    // Seat 1 led (forced via the Mahjong gift above) and, by the time control
+    // returns here, must have already resolved past its own tichu decision
+    // window -- otherwise isAwaitingTichuDecision would still be gating it
+    // and it could never have made its leading play at all.
+    expect(game.getState().tichuDecided[1]).toBe(true);
+    expect(game.getState().phase).toBe(Phase.Playing);
+  });
+});
+
 describe('SoloGame: full round', () => {
   const originalFetch = globalThis.fetch;
 
@@ -564,7 +604,11 @@ describe('SoloGame: full round', () => {
     expect(game.getCumulativeScores()).toEqual(scoresBeforeDeal);
     expect(game.getRoundHistory()).toEqual(historyBeforeDeal);
     expect(nextState.phase).toBe(Phase.LargeTichu);
-    expect(nextState.largeTichuCalls).toEqual([null, false, false, false]);
+    // Only the human (seat 0) stays undecided -- AI seats' actual true/false
+    // values depend on the (unseeded) fresh deal's hand strength, decided by
+    // heuristicCalls.ts, so this doesn't pin exact values.
+    expect(nextState.largeTichuCalls[HUMAN_SEAT]).toBe(null);
+    expect(nextState.largeTichuCalls.filter((c) => c !== null)).toHaveLength(3);
   });
 
   it('records each round\'s own score in getRoundHistory, separate from the running cumulative total', async () => {
@@ -675,6 +719,8 @@ describe('SoloGame: a Dragon trick recipient is decided by whoever actually won 
     largeTichuCalls: [false, false, false, false],
     tichuCalls: [false, false, false, false],
     mahjongWish: null,
+    receivedFrom: [{}, {}, {}, {}],
+    tichuDecided: [true, true, true, true],
     ...overrides,
   });
 

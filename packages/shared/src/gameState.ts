@@ -31,6 +31,17 @@ export interface GameState {
   readonly largeTichuCalls: readonly (boolean | null)[];
   readonly tichuCalls: readonly boolean[];
   readonly mahjongWish: Rank | null;
+  /** receivedFrom[recipient][giver] = card -- who gave `recipient` which card
+   * during the exchange, populated by `exchangeCards`. Empty objects before
+   * the exchange happens. Mirrors `ai/tichu_env/state.py`'s `received_from`:
+   * kept as real state (not derived) since exchanged-card choice is strategic
+   * signal the observation encoder needs to expose. */
+  readonly receivedFrom: readonly Readonly<Record<number, Card>>[];
+  /** Whether each player has passed through the (small) Tichu call/decline
+   * decision point yet -- needed because `tichuCalls` alone is bool, not
+   * bool | null, so it can't distinguish "declined" from "hasn't been asked
+   * yet" the way `largeTichuCalls` can. See `isAwaitingTichuDecision`. */
+  readonly tichuDecided: readonly boolean[];
 }
 
 export type Gifts = Record<number, Record<number, Card>>;
@@ -58,9 +69,36 @@ export function dealNewRound(deck: readonly Card[] = shuffledDeck()): GameState 
     largeTichuCalls: [null, null, null, null],
     tichuCalls: [false, false, false, false],
     mahjongWish: null,
+    receivedFrom: Array.from({ length: NUM_PLAYERS }, () => ({})),
+    tichuDecided: [false, false, false, false],
   };
 }
 
+/** The lowest-numbered seat that has not yet decided on large Tichu, or
+ * `null` once all four have. Used only by `encodeLegalActions` to sequence
+ * the AI/self-play action space one seat at a time -- mirroring Python's
+ * `_next_undecided_large_tichu_seat`, but derived statelessly from
+ * `largeTichuCalls` rather than a persisted `currentPlayer` pointer, since
+ * `decideLargeTichu` deliberately stays order-independent (real multiplayer
+ * lets all four seats decide simultaneously; see that function's doc
+ * comment). Ascending-seat order reproduces the exact same sequence Python's
+ * pointer produces as long as decisions are made in that order, which the
+ * self-play environment and `soloGame.ts` both do. */
+export function nextUndecidedLargeTichuSeat(largeTichuCalls: readonly (boolean | null)[]): number | null {
+  const seat = largeTichuCalls.findIndex((c) => c === null);
+  return seat === -1 ? null : seat;
+}
+
+/** Deliberately does NOT enforce `player === state.currentPlayer` (unlike
+ * Python's `decide_large_tichu`, which does -- that's a self-play-only
+ * simplification for sequencing the RL action space one seat at a time).
+ * Real Tichu's grand-Tichu decision is simultaneous/order-independent, and
+ * `packages/server`'s multiplayer room already relies on any of the four
+ * seats being able to decide whenever their client sends the message --
+ * adding turn enforcement here would force human players to wait through a
+ * seat-order queue that the real game doesn't have. The AI/self-play-style
+ * sequential view is instead reconstructed statelessly by
+ * `nextUndecidedLargeTichuSeat`, used only by `encodeLegalActions`. */
 export function decideLargeTichu(state: GameState, player: number, called: boolean): Result<GameState, string> {
   if (state.phase !== Phase.LargeTichu) {
     return err('large tichu can only be decided before the final 6 cards are dealt');
@@ -101,6 +139,52 @@ export function callTichu(state: GameState, player: number): Result<GameState, s
   return ok({ ...state, tichuCalls: calls });
 }
 
+/** True iff `player` is exactly at the point where the (small) Tichu
+ * call/decline decision should be offered before any trick-play action: the
+ * playing phase has started, `player` hasn't decided yet, and they still
+ * hold the full 14-card hand (their first card of the round hasn't been
+ * played). This is the simplified "decide at your first play" window the M2
+ * curriculum settled on, rather than the real rule's "anytime before your
+ * first play" (which `callTichu` above still allows, unrestricted by this
+ * flag) -- mirrors `ai/tichu_env/state.py`'s `is_awaiting_tichu_decision`. */
+export function isAwaitingTichuDecision(state: GameState, player: number): boolean {
+  return state.phase === Phase.Playing && !state.tichuDecided[player] && state.hands[player]!.length === 14;
+}
+
+/** The AI/self-play-facing counterpart to `callTichu`: a one-time forced
+ * call-or-decline decision gated to `isAwaitingTichuDecision`'s window, and
+ * (unlike `decideLargeTichu`) enforcing turn order -- safe to enforce here
+ * because during `Phase.Playing`, `state.currentPlayer` already carries real
+ * turn-order meaning (whoever must act next), so this isn't a new ordering
+ * constraint the way it would have been during `Phase.LargeTichu`. Mirrors
+ * `ai/tichu_env/state.py`'s `decide_tichu`. */
+export function decideTichu(state: GameState, player: number, called: boolean): Result<GameState, string> {
+  if (state.phase !== Phase.Playing) {
+    return err('tichu can only be decided during the playing phase');
+  }
+  if (state.tichuDecided[player]) {
+    return err('player has already decided on tichu');
+  }
+  if (player !== state.currentPlayer) {
+    return err("it is not this player's turn to decide on tichu");
+  }
+  if (state.hands[player]!.length !== 14) {
+    return err('tichu can only be decided while still holding all 14 cards');
+  }
+
+  const decided = [...state.tichuDecided];
+  decided[player] = true;
+  let next: GameState = { ...state, tichuDecided: decided };
+
+  if (called) {
+    const calls = [...state.tichuCalls];
+    calls[player] = true;
+    next = { ...next, tichuCalls: calls };
+  }
+
+  return ok(next);
+}
+
 export function exchangeCards(state: GameState, gifts: Gifts): Result<GameState, string> {
   if (state.phase !== Phase.Exchange) {
     return err('cards can only be exchanged during the exchange phase');
@@ -127,9 +211,12 @@ export function exchangeCards(state: GameState, gifts: Gifts): Result<GameState,
   }
 
   const incoming: Card[][] = Array.from({ length: NUM_PLAYERS }, () => []);
+  const receivedFrom: Record<number, Card>[] = Array.from({ length: NUM_PLAYERS }, () => ({}));
   for (let giver = 0; giver < NUM_PLAYERS; giver += 1) {
     for (const [recipientStr, card] of Object.entries(gifts[giver] ?? {})) {
-      incoming[Number(recipientStr)]!.push(card);
+      const recipient = Number(recipientStr);
+      incoming[recipient]!.push(card);
+      receivedFrom[recipient]![giver] = card;
     }
   }
 
@@ -148,6 +235,7 @@ export function exchangeCards(state: GameState, gifts: Gifts): Result<GameState,
     phase: Phase.Playing,
     currentPlayer: leader,
     trickLeader: leader,
+    receivedFrom,
   });
 }
 

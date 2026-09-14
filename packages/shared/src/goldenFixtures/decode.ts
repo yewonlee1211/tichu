@@ -66,6 +66,11 @@ export interface FixtureState {
   readonly largeTichuCalls: readonly (boolean | null)[];
   readonly tichuCalls: readonly boolean[];
   readonly mahjongWish: string | null;
+  // Per recipient, a JSON object keyed by giver seat (as a string, since JSON
+  // object keys are always strings -- Python's json.dumps turns the
+  // dict[int, Card] this mirrors into exactly this shape).
+  readonly receivedFrom: readonly Readonly<Record<string, FixtureCard>>[];
+  readonly tichuDecided: readonly boolean[];
 }
 
 export function cardFromFixture(json: FixtureCard): Card {
@@ -87,6 +92,17 @@ export function comboFromFixture(json: FixtureCombo | null): Combo | null {
   };
 }
 
+/** A single `encodeLegalActions` candidate as serialized by
+ * `ai/scripts/generate_golden_fixtures.py`'s `ser_action` -- `true`/`false`
+ * for a large-Tichu or (small) Tichu call/decline candidate, `null` for
+ * PASS, or a `FixtureCombo` for an ordinary trick-play candidate. */
+export type FixtureAction = FixtureCombo | boolean | null;
+
+export function actionFromFixture(json: FixtureAction): Combo | boolean | null {
+  if (json === null || typeof json === 'boolean') return json;
+  return comboFromFixture(json);
+}
+
 export function stateFromFixture(json: FixtureState): GameState {
   return {
     hands: json.hands.map(cardsFromFixture),
@@ -104,5 +120,9 @@ export function stateFromFixture(json: FixtureState): GameState {
     largeTichuCalls: json.largeTichuCalls,
     tichuCalls: json.tichuCalls,
     mahjongWish: json.mahjongWish === null ? null : RANK_BY_NAME[json.mahjongWish]!,
+    receivedFrom: json.receivedFrom.map((byGiver) =>
+      Object.fromEntries(Object.entries(byGiver).map(([giver, card]) => [Number(giver), cardFromFixture(card)])),
+    ),
+    tichuDecided: json.tichuDecided,
   };
 }

@@ -4,6 +4,7 @@ import doubleOutFixture from './goldenFixtures/double_out.json';
 import grandTichuFixture from './goldenFixtures/grand_tichu.json';
 import lastCardHandoverFixture from './goldenFixtures/last_card_handover.json';
 import normalRoundFixture from './goldenFixtures/normal_round.json';
+import tichuCallDecisionFixture from './goldenFixtures/tichu_call_decision.json';
 import { cardFromFixture, cardsFromFixture, stateFromFixture } from './goldenFixtures/decode';
 import { type Card, Rank, Suit } from './cards';
 import { ComboType, identifyCombo } from './combinations';
@@ -14,8 +15,11 @@ import {
   callTichu,
   dealNewRound,
   decideLargeTichu,
+  decideTichu,
   exchangeCards,
+  isAwaitingTichuDecision,
   legalCombos,
+  nextUndecidedLargeTichuSeat,
   passTurn,
   playCombo,
 } from './gameState';
@@ -45,6 +49,8 @@ function makePlayingState(hands: Partial<Record<number, Card[]>>, overrides: Par
     largeTichuCalls: [false, false, false, false],
     tichuCalls: [false, false, false, false],
     mahjongWish: null,
+    receivedFrom: Array.from({ length: NUM_PLAYERS }, () => ({})),
+    tichuDecided: [false, false, false, false],
   };
   return { ...base, ...overrides };
 }
@@ -52,6 +58,21 @@ function makePlayingState(hands: Partial<Record<number, Card[]>>, overrides: Par
 function expectOk<T>(result: { ok: boolean; value?: T; error?: string }): T {
   if (!result.ok) throw new Error(`expected ok, got error: ${result.error}`);
   return result.value as T;
+}
+
+/** Python's `decide_large_tichu` bumps `current_player` to the next
+ * undecided seat as a side effect (self-play needs it to sequence the
+ * decision one seat at a time); TS's `decideLargeTichu` deliberately does
+ * NOT (see its doc comment -- multiplayer lets all four seats decide
+ * simultaneously, and mutating `currentPlayer` here would make `Seats.tsx`
+ * highlight a misleading "active seat" during that phase). So a fixture
+ * snapshot taken right after a sequence of `decide_large_tichu` calls always
+ * has this one field diverge from TS's equivalent state; this patches the
+ * fixture to the value TS actually produces (dealNewRound's initial
+ * currentPlayer, since nothing has touched it yet) before comparing
+ * everything else. */
+function withUnaffectedCurrentPlayer(fixture: unknown): GameState {
+  return { ...stateFromFixture(fixture as never), currentPlayer: 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +96,7 @@ describe('golden fixtures: normal_round', () => {
     for (let player = 0; player < NUM_PLAYERS; player += 1) {
       state = expectOk(decideLargeTichu(state, player, false));
     }
-    expect(state).toEqual(stateFromFixture(normalRoundFixture.afterLargeTichuState as never));
+    expect(state).toEqual(withUnaffectedCurrentPlayer(normalRoundFixture.afterLargeTichuState));
 
     const gifts: Record<number, Record<number, Card>> = {};
     for (let giver = 0; giver < NUM_PLAYERS; giver += 1) {
@@ -86,6 +107,9 @@ describe('golden fixtures: normal_round', () => {
     state = expectOk(exchangeCards(state, gifts));
     expect(state).toEqual(stateFromFixture(normalRoundFixture.afterExchangeState as never));
     expect(state.currentPlayer).toBe(normalRoundFixture.leader);
+
+    state = expectOk(decideTichu(state, state.currentPlayer, false));
+    expect(state).toEqual(stateFromFixture(normalRoundFixture.afterTichuDecisionState as never));
 
     const leadCard = cardFromFixture(normalRoundFixture.leadCard as never);
     state = expectOk(playCombo(state, state.currentPlayer, [leadCard]));
@@ -148,7 +172,55 @@ describe('golden fixtures: grand_tichu', () => {
     for (let player = 0; player < NUM_PLAYERS; player += 1) {
       state = expectOk(decideLargeTichu(state, player, player === 0));
     }
-    expect(state).toEqual(stateFromFixture(grandTichuFixture.afterLargeTichuState as never));
+    expect(state).toEqual(withUnaffectedCurrentPlayer(grandTichuFixture.afterLargeTichuState));
+  });
+});
+
+describe('golden fixtures: tichu_call_decision', () => {
+  it('matches Python: mixed large-Tichu calls, exchange, then the (small) Tichu decision window', () => {
+    const deck = [0, 1, 2, 3].flatMap((i) => [
+      ...cardsFromFixture(tichuCallDecisionFixture.dealtState.hands[i] as never),
+      ...cardsFromFixture(tichuCallDecisionFixture.dealtState.pendingFinalCards[i] as never),
+    ]);
+    const calls = [true, false, true, false];
+
+    let state = dealNewRound(deck);
+    for (let player = 0; player < NUM_PLAYERS; player += 1) {
+      state = expectOk(decideLargeTichu(state, player, calls[player]!));
+    }
+    expect(state).toEqual(withUnaffectedCurrentPlayer(tichuCallDecisionFixture.afterLargeTichuState));
+
+    const gifts: Record<number, Record<number, Card>> = {};
+    for (let giver = 0; giver < NUM_PLAYERS; giver += 1) {
+      const hand = [...state.hands[giver]!].sort((a, b) => a.rank - b.rank);
+      const others = [0, 1, 2, 3].filter((p) => p !== giver);
+      gifts[giver] = Object.fromEntries(others.map((recipient, i) => [recipient, hand[i]!]));
+    }
+    state = expectOk(exchangeCards(state, gifts));
+    expect(state).toEqual(stateFromFixture(tichuCallDecisionFixture.afterExchangeState as never));
+
+    const leader = state.currentPlayer;
+    const other = (leader + 1) % NUM_PLAYERS;
+    expect(leader).toBe(tichuCallDecisionFixture.leader);
+    expect(isAwaitingTichuDecision(state, leader)).toBe(tichuCallDecisionFixture.awaitingBeforeDecision);
+    // isAwaitingTichuDecision doesn't itself gate by turn order (it's purely
+    // "still holds 14 cards and hasn't decided yet"), so it's also true for
+    // `other` -- only decideTichu enforces that it must be `other`'s turn.
+    expect(isAwaitingTichuDecision(state, other)).toBe(true);
+    expect(decideTichu(state, other, false).ok).toBe(false);
+
+    state = expectOk(decideTichu(state, leader, true));
+    expect(state).toEqual(stateFromFixture(tichuCallDecisionFixture.afterTichuDecisionState as never));
+    expect(isAwaitingTichuDecision(state, leader)).toBe(tichuCallDecisionFixture.awaitingAfterDecision);
+    expect(decideTichu(state, leader, false).ok).toBe(false);
+  });
+});
+
+describe('nextUndecidedLargeTichuSeat', () => {
+  it('returns the lowest-numbered undecided seat, or null once all four have decided', () => {
+    expect(nextUndecidedLargeTichuSeat([null, null, null, null])).toBe(0);
+    expect(nextUndecidedLargeTichuSeat([true, null, false, null])).toBe(1);
+    expect(nextUndecidedLargeTichuSeat([true, false, true, false])).toBe(null);
   });
 });
 
@@ -208,6 +280,31 @@ describe('callTichu', () => {
   });
 });
 
+describe('isAwaitingTichuDecision / decideTichu', () => {
+  it('is false before Playing and once a hand has dropped below 14 cards', () => {
+    const state = makePlayingState({ 0: [card(Rank.Five)] }, { currentPlayer: 0 });
+    expect(isAwaitingTichuDecision(state, 0)).toBe(false);
+
+    const exchangePhaseState = makePlayingState({}, { phase: Phase.Exchange });
+    expect(isAwaitingTichuDecision(exchangePhaseState, 0)).toBe(false);
+  });
+
+  it('is true only for the current player still holding all 14 cards, and decideTichu resolves it', () => {
+    const fourteen = Array.from({ length: 14 }, () => card(Rank.Five));
+    const state = makePlayingState({ 0: fourteen, 1: fourteen }, { currentPlayer: 0 });
+
+    expect(isAwaitingTichuDecision(state, 0)).toBe(true);
+    expect(isAwaitingTichuDecision(state, 1)).toBe(true);
+    expect(decideTichu(state, 1, false).ok).toBe(false); // not seat 1's turn
+
+    const decided = expectOk(decideTichu(state, 0, true));
+    expect(decided.tichuDecided[0]).toBe(true);
+    expect(decided.tichuCalls[0]).toBe(true);
+    expect(isAwaitingTichuDecision(decided, 0)).toBe(false);
+    expect(decideTichu(decided, 0, false).ok).toBe(false); // already decided
+  });
+});
+
 describe('exchangeCards', () => {
   it('rejects giving the same physical card to more than one recipient', () => {
     let state = dealNewRound();
@@ -229,6 +326,27 @@ describe('exchangeCards', () => {
     const gifts = { 0: { 1: hand[0]!, 2: hand[1]! } };
 
     expect(exchangeCards(state, gifts).ok).toBe(false);
+  });
+
+  it('records who gave each recipient which card in receivedFrom', () => {
+    let state = dealNewRound();
+    for (let player = 0; player < NUM_PLAYERS; player += 1) {
+      state = expectOk(decideLargeTichu(state, player, false));
+    }
+    const gifts: Record<number, Record<number, Card>> = {};
+    for (let giver = 0; giver < NUM_PLAYERS; giver += 1) {
+      const hand = state.hands[giver]!;
+      const others = [0, 1, 2, 3].filter((p) => p !== giver);
+      gifts[giver] = Object.fromEntries(others.map((recipient, i) => [recipient, hand[i]!]));
+    }
+
+    const result = expectOk(exchangeCards(state, gifts));
+
+    for (let recipient = 0; recipient < NUM_PLAYERS; recipient += 1) {
+      for (const giver of [0, 1, 2, 3].filter((p) => p !== recipient)) {
+        expect(result.receivedFrom[recipient]![giver]).toEqual(gifts[giver]![recipient]);
+      }
+    }
   });
 });
 

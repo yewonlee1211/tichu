@@ -1,0 +1,5297 @@
+{
+  "name": "tichu_call_decision",
+  "description": "티츄 콜 결정: 라지 티츄 2비트 인코딩 + 작은 티츄 콜/포기 결정 지점",
+  "obsDim": 352,
+  "actionDim": 73,
+  "dealtState": {
+    "hands": [
+      [
+        {
+          "rank": "SIX",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "NINE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "NINE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "JADE"
+        },
+        {
+          "rank": "KING",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "PAGODA"
+        }
+      ],
+      [
+        {
+          "rank": "KING",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "DRAGON",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "DOG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "TEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "PAGODA"
+        }
+      ],
+      [
+        {
+          "rank": "FIVE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "NINE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "JACK",
+          "suit": "STAR"
+        },
+        {
+          "rank": "JACK",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "ACE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "STAR"
+        }
+      ],
+      [
+        {
+          "rank": "FIVE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "TWO",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "KING",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SIX",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "PHOENIX",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "THREE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SIX",
+          "suit": "JADE"
+        }
+      ]
+    ],
+    "pendingFinalCards": [
+      [
+        {
+          "rank": "TWO",
+          "suit": "JADE"
+        },
+        {
+          "rank": "NINE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TWO",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "JADE"
+        }
+      ],
+      [
+        {
+          "rank": "SEVEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "TWO",
+          "suit": "STAR"
+        }
+      ],
+      [
+        {
+          "rank": "FOUR",
+          "suit": "STAR"
+        },
+        {
+          "rank": "MAHJONG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "SIX",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "THREE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "JADE"
+        }
+      ],
+      [
+        {
+          "rank": "ACE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "KING",
+          "suit": "JADE"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "PAGODA"
+        }
+      ]
+    ],
+    "phase": "LARGE_TICHU",
+    "currentPlayer": 0,
+    "trickLeader": 0,
+    "trickCards": [],
+    "currentBest": null,
+    "currentStrength": 0.0,
+    "lastPlayerToAct": null,
+    "passesInARow": 0,
+    "finishedOrder": [],
+    "collectedTricks": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "largeTichuCalls": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "tichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "mahjongWish": null,
+    "receivedFrom": [
+      {},
+      {},
+      {},
+      {}
+    ],
+    "tichuDecided": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "afterLargeTichuState": {
+    "hands": [
+      [
+        {
+          "rank": "SIX",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "NINE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "NINE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "JADE"
+        },
+        {
+          "rank": "KING",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TWO",
+          "suit": "JADE"
+        },
+        {
+          "rank": "NINE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TWO",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "JADE"
+        }
+      ],
+      [
+        {
+          "rank": "KING",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "DRAGON",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "DOG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "TEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "TWO",
+          "suit": "STAR"
+        }
+      ],
+      [
+        {
+          "rank": "FIVE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "NINE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "JACK",
+          "suit": "STAR"
+        },
+        {
+          "rank": "JACK",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "ACE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "STAR"
+        },
+        {
+          "rank": "MAHJONG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "SIX",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "THREE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "JADE"
+        }
+      ],
+      [
+        {
+          "rank": "FIVE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "TWO",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "KING",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SIX",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "PHOENIX",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "THREE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SIX",
+          "suit": "JADE"
+        },
+        {
+          "rank": "ACE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "KING",
+          "suit": "JADE"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "PAGODA"
+        }
+      ]
+    ],
+    "pendingFinalCards": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "phase": "EXCHANGE",
+    "currentPlayer": 3,
+    "trickLeader": 0,
+    "trickCards": [],
+    "currentBest": null,
+    "currentStrength": 0.0,
+    "lastPlayerToAct": null,
+    "passesInARow": 0,
+    "finishedOrder": [],
+    "collectedTricks": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "largeTichuCalls": [
+      true,
+      false,
+      true,
+      false
+    ],
+    "tichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "mahjongWish": null,
+    "receivedFrom": [
+      {},
+      {},
+      {},
+      {}
+    ],
+    "tichuDecided": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "observationAfterLargeTichu": [
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    1.0,
+    0.0,
+    1.0,
+    0.0,
+    1.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "afterExchangeState": {
+    "hands": [
+      [
+        {
+          "rank": "SIX",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "NINE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "NINE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "JADE"
+        },
+        {
+          "rank": "KING",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "NINE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "DOG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "MAHJONG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "TWO",
+          "suit": "SWORD"
+        }
+      ],
+      [
+        {
+          "rank": "KING",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "DRAGON",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "TEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "TWO",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "STAR"
+        }
+      ],
+      [
+        {
+          "rank": "FIVE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "NINE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "JACK",
+          "suit": "STAR"
+        },
+        {
+          "rank": "JACK",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "ACE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SIX",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "JACK",
+          "suit": "JADE"
+        },
+        {
+          "rank": "TWO",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TWO",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "PAGODA"
+        }
+      ],
+      [
+        {
+          "rank": "FIVE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "KING",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SIX",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "PHOENIX",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "SIX",
+          "suit": "JADE"
+        },
+        {
+          "rank": "ACE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "KING",
+          "suit": "JADE"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "THREE",
+          "suit": "PAGODA"
+        }
+      ]
+    ],
+    "pendingFinalCards": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "phase": "PLAYING",
+    "currentPlayer": 0,
+    "trickLeader": 0,
+    "trickCards": [],
+    "currentBest": null,
+    "currentStrength": 0.0,
+    "lastPlayerToAct": null,
+    "passesInARow": 0,
+    "finishedOrder": [],
+    "collectedTricks": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "largeTichuCalls": [
+      true,
+      false,
+      true,
+      false
+    ],
+    "tichuCalls": [
+      false,
+      false,
+      false,
+      false
+    ],
+    "mahjongWish": null,
+    "receivedFrom": [
+      {
+        "1": {
+          "rank": "DOG",
+          "suit": "SPECIAL"
+        },
+        "2": {
+          "rank": "MAHJONG",
+          "suit": "SPECIAL"
+        },
+        "3": {
+          "rank": "TWO",
+          "suit": "SWORD"
+        }
+      },
+      {
+        "0": {
+          "rank": "TWO",
+          "suit": "JADE"
+        },
+        "2": {
+          "rank": "THREE",
+          "suit": "JADE"
+        },
+        "3": {
+          "rank": "THREE",
+          "suit": "STAR"
+        }
+      },
+      {
+        "0": {
+          "rank": "TWO",
+          "suit": "PAGODA"
+        },
+        "1": {
+          "rank": "TWO",
+          "suit": "STAR"
+        },
+        "3": {
+          "rank": "FOUR",
+          "suit": "PAGODA"
+        }
+      },
+      {
+        "0": {
+          "rank": "FOUR",
+          "suit": "JADE"
+        },
+        "1": {
+          "rank": "THREE",
+          "suit": "SWORD"
+        },
+        "2": {
+          "rank": "THREE",
+          "suit": "PAGODA"
+        }
+      }
+    ],
+    "tichuDecided": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "leader": 0,
+  "awaitingBeforeDecision": true,
+  "legalActionsForOtherBeforeDecision": [],
+  "legalActionsBeforeDecision": [
+    {
+      "action": true,
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": false,
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0
+      ]
+    }
+  ],
+  "afterTichuDecisionState": {
+    "hands": [
+      [
+        {
+          "rank": "SIX",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "NINE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "NINE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "JADE"
+        },
+        {
+          "rank": "KING",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "JACK",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "NINE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "DOG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "MAHJONG",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "TWO",
+          "suit": "SWORD"
+        }
+      ],
+      [
+        {
+          "rank": "KING",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "DRAGON",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "TEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "SEVEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "TWO",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "STAR"
+        }
+      ],
+      [
+        {
+          "rank": "FIVE",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FIVE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "NINE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "JACK",
+          "suit": "STAR"
+        },
+        {
+          "rank": "JACK",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "ACE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "EIGHT",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SIX",
+          "suit": "STAR"
+        },
+        {
+          "rank": "ACE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "JACK",
+          "suit": "JADE"
+        },
+        {
+          "rank": "TWO",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TWO",
+          "suit": "STAR"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "PAGODA"
+        }
+      ],
+      [
+        {
+          "rank": "FIVE",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "STAR"
+        },
+        {
+          "rank": "KING",
+          "suit": "STAR"
+        },
+        {
+          "rank": "SIX",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "PHOENIX",
+          "suit": "SPECIAL"
+        },
+        {
+          "rank": "SIX",
+          "suit": "JADE"
+        },
+        {
+          "rank": "ACE",
+          "suit": "JADE"
+        },
+        {
+          "rank": "QUEEN",
+          "suit": "PAGODA"
+        },
+        {
+          "rank": "TEN",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "TEN",
+          "suit": "JADE"
+        },
+        {
+          "rank": "KING",
+          "suit": "JADE"
+        },
+        {
+          "rank": "FOUR",
+          "suit": "JADE"
+        },
+        {
+          "rank": "THREE",
+          "suit": "SWORD"
+        },
+        {
+          "rank": "THREE",
+          "suit": "PAGODA"
+        }
+      ]
+    ],
+    "pendingFinalCards": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "phase": "PLAYING",
+    "currentPlayer": 0,
+    "trickLeader": 0,
+    "trickCards": [],
+    "currentBest": null,
+    "currentStrength": 0.0,
+    "lastPlayerToAct": null,
+    "passesInARow": 0,
+    "finishedOrder": [],
+    "collectedTricks": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "largeTichuCalls": [
+      true,
+      false,
+      true,
+      false
+    ],
+    "tichuCalls": [
+      true,
+      false,
+      false,
+      false
+    ],
+    "mahjongWish": null,
+    "receivedFrom": [
+      {
+        "1": {
+          "rank": "DOG",
+          "suit": "SPECIAL"
+        },
+        "2": {
+          "rank": "MAHJONG",
+          "suit": "SPECIAL"
+        },
+        "3": {
+          "rank": "TWO",
+          "suit": "SWORD"
+        }
+      },
+      {
+        "0": {
+          "rank": "TWO",
+          "suit": "JADE"
+        },
+        "2": {
+          "rank": "THREE",
+          "suit": "JADE"
+        },
+        "3": {
+          "rank": "THREE",
+          "suit": "STAR"
+        }
+      },
+      {
+        "0": {
+          "rank": "TWO",
+          "suit": "PAGODA"
+        },
+        "1": {
+          "rank": "TWO",
+          "suit": "STAR"
+        },
+        "3": {
+          "rank": "FOUR",
+          "suit": "PAGODA"
+        }
+      },
+      {
+        "0": {
+          "rank": "FOUR",
+          "suit": "JADE"
+        },
+        "1": {
+          "rank": "THREE",
+          "suit": "SWORD"
+        },
+        "2": {
+          "rank": "THREE",
+          "suit": "PAGODA"
+        }
+      }
+    ],
+    "tichuDecided": [
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "awaitingAfterDecision": false,
+  "legalActionsAfterDecision": [
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "SIX",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 6.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.375,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "QUEEN",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 12.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.75,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "FIVE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 5.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.3125,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 8.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "KING",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 13.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.8125,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "JACK",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 11.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.6875,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 8.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 8.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "DOG",
+        "cards": [
+          {
+            "rank": "DOG",
+            "suit": "SPECIAL"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 0.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "MAHJONG",
+            "suit": "SPECIAL"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 1.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.0625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "SINGLE",
+        "cards": [
+          {
+            "rank": "TWO",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 1,
+        "rankStrength": 2.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0714285746216774,
+        0.125,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR",
+        "cards": [
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 2,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1428571492433548,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR",
+        "cards": [
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 2,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1428571492433548,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR",
+        "cards": [
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 2,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1428571492433548,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "TRIPLE",
+        "cards": [
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 3,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.2142857164144516,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 2,
+        "rankStrength": 8.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1428571492433548,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 2,
+        "rankStrength": 8.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1428571492433548,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 2,
+        "rankStrength": 8.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1428571492433548,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "TRIPLE",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 3,
+        "rankStrength": 8.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.2142857164144516,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "FULL_HOUSE",
+        "cards": [
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 5,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3571428656578064,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "FULL_HOUSE",
+        "cards": [
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 5,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3571428656578064,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "FULL_HOUSE",
+        "cards": [
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 5,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3571428656578064,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "FULL_HOUSE",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 5,
+        "rankStrength": 8.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3571428656578064,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "FULL_HOUSE",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 5,
+        "rankStrength": 8.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3571428656578064,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "FULL_HOUSE",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 5,
+        "rankStrength": 8.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3571428656578064,
+        0.5,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR_STRAIGHT",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 4,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.2857142984867096,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR_STRAIGHT",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 4,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.2857142984867096,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR_STRAIGHT",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 4,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.2857142984867096,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR_STRAIGHT",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 4,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.2857142984867096,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR_STRAIGHT",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 4,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.2857142984867096,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR_STRAIGHT",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "JADE"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 4,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.2857142984867096,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR_STRAIGHT",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          }
+        ],
+        "length": 4,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.2857142984867096,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR_STRAIGHT",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "NINE",
+            "suit": "STAR"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 4,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.2857142984867096,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "action": {
+        "comboType": "PAIR_STRAIGHT",
+        "cards": [
+          {
+            "rank": "EIGHT",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "EIGHT",
+            "suit": "SWORD"
+          },
+          {
+            "rank": "NINE",
+            "suit": "PAGODA"
+          },
+          {
+            "rank": "NINE",
+            "suit": "SWORD"
+          }
+        ],
+        "length": 4,
+        "rankStrength": 9.0,
+        "isLonePhoenix": false
+      },
+      "vector": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.2857142984867096,
+        0.5625,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ]
+}

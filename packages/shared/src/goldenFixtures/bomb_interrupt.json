@@ -1,8 +1,8 @@
 {
   "name": "bomb_interrupt",
   "description": "봄 인터럽트: 순서가 아닌 플레이어가 봄으로 트릭에 끼어듦",
-  "obsDim": 175,
-  "actionDim": 69,
+  "obsDim": 352,
+  "actionDim": 73,
   "beforeState": {
     "hands": [
       [
@@ -69,7 +69,19 @@
       false,
       false
     ],
-    "mahjongWish": null
+    "mahjongWish": null,
+    "receivedFrom": [
+      {},
+      {},
+      {},
+      {}
+    ],
+    "tichuDecided": [
+      false,
+      false,
+      false,
+      false
+    ]
   },
   "afterOpenState": {
     "hands": [
@@ -150,11 +162,23 @@
       false,
       false
     ],
-    "mahjongWish": null
+    "mahjongWish": null,
+    "receivedFrom": [
+      {},
+      {},
+      {},
+      {}
+    ],
+    "tichuDecided": [
+      false,
+      false,
+      false,
+      false
+    ]
   },
   "legalActionsForPlayer2BeforeBomb": [
     {
-      "combo": {
+      "action": {
         "comboType": "BOMB_QUAD",
         "cards": [
           {
@@ -246,6 +270,10 @@
         0.0,
         0.2857142984867096,
         0.4375,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
         0.0,
         0.0
       ]
@@ -360,6 +388,18 @@
       false,
       false
     ],
-    "mahjongWish": null
+    "mahjongWish": null,
+    "receivedFrom": [
+      {},
+      {},
+      {},
+      {}
+    ],
+    "tichuDecided": [
+      false,
+      false,
+      false,
+      false
+    ]
   }
 }

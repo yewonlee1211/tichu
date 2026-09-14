@@ -4,12 +4,13 @@ import doubleOutFixture from './goldenFixtures/double_out.json';
 import grandTichuFixture from './goldenFixtures/grand_tichu.json';
 import lastCardHandoverFixture from './goldenFixtures/last_card_handover.json';
 import normalRoundFixture from './goldenFixtures/normal_round.json';
-import { comboFromFixture, stateFromFixture } from './goldenFixtures/decode';
+import tichuCallDecisionFixture from './goldenFixtures/tichu_call_decision.json';
+import { actionFromFixture, stateFromFixture } from './goldenFixtures/decode';
 import { ACTION_DIM, OBS_DIM, encodeLegalActions, encodeObservation } from './encoding';
 
-function legalActionsFromFixture(entries: readonly { combo: unknown; vector: readonly number[] }[]) {
+function legalActionsFromFixture(entries: readonly { action: unknown; vector: readonly number[] }[]) {
   return entries.map((entry) => ({
-    combo: comboFromFixture(entry.combo as never),
+    action: actionFromFixture(entry.action as never),
     vector: entry.vector,
   }));
 }
@@ -25,7 +26,7 @@ describe('OBS_DIM / ACTION_DIM', () => {
 
 describe('golden fixtures: encodeObservation', () => {
   it('matches Python for the trick leader about to open a fresh trick', () => {
-    const state = stateFromFixture(normalRoundFixture.afterExchangeState as never);
+    const state = stateFromFixture(normalRoundFixture.afterTichuDecisionState as never);
 
     const observation = encodeObservation(state, normalRoundFixture.leader);
 
@@ -67,7 +68,7 @@ describe('golden fixtures: encodeObservation', () => {
 
 describe('golden fixtures: encodeLegalActions', () => {
   it('matches Python for the trick leader about to open a fresh trick', () => {
-    const state = stateFromFixture(normalRoundFixture.afterExchangeState as never);
+    const state = stateFromFixture(normalRoundFixture.afterTichuDecisionState as never);
 
     const actions = encodeLegalActions(state, normalRoundFixture.leader);
 
@@ -80,5 +81,45 @@ describe('golden fixtures: encodeLegalActions', () => {
     const actions = encodeLegalActions(state, 2);
 
     expect(actions).toEqual(legalActionsFromFixture(bombInterruptFixture.legalActionsForPlayer2BeforeBomb));
+  });
+});
+
+describe('golden fixtures: tichu call decision', () => {
+  it('matches Python OBS_DIM/ACTION_DIM', () => {
+    expect(OBS_DIM).toBe(tichuCallDecisionFixture.obsDim);
+    expect(ACTION_DIM).toBe(tichuCallDecisionFixture.actionDim);
+  });
+
+  it('encodes the two-bit called/declined large-Tichu calls after a True/False/True/False sequence', () => {
+    const state = stateFromFixture(tichuCallDecisionFixture.afterLargeTichuState as never);
+
+    const observation = encodeObservation(state, 0);
+
+    expect(observation).toEqual(tichuCallDecisionFixture.observationAfterLargeTichu);
+  });
+
+  it('offers the (small) Tichu call/decline choice to the leader before their first play', () => {
+    const state = stateFromFixture(tichuCallDecisionFixture.afterExchangeState as never);
+
+    const actions = encodeLegalActions(state, tichuCallDecisionFixture.leader);
+
+    expect(actions).toEqual(legalActionsFromFixture(tichuCallDecisionFixture.legalActionsBeforeDecision));
+  });
+
+  it('offers no legal actions to a player other than the one currently deciding', () => {
+    const state = stateFromFixture(tichuCallDecisionFixture.afterExchangeState as never);
+    const other = (tichuCallDecisionFixture.leader + 1) % 4;
+
+    const actions = encodeLegalActions(state, other);
+
+    expect(actions).toEqual(legalActionsFromFixture(tichuCallDecisionFixture.legalActionsForOtherBeforeDecision));
+  });
+
+  it('returns to ordinary trick-play candidates once the leader has decided', () => {
+    const state = stateFromFixture(tichuCallDecisionFixture.afterTichuDecisionState as never);
+
+    const actions = encodeLegalActions(state, tichuCallDecisionFixture.leader);
+
+    expect(actions).toEqual(legalActionsFromFixture(tichuCallDecisionFixture.legalActionsAfterDecision));
   });
 });
