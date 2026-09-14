@@ -17,6 +17,36 @@ from agents.policy_network import TichuPolicyValueNet
 
 LegalAction = tuple[Combo | None, np.ndarray]
 
+DEFAULT_EPSILON_LARGE_TICHU = 0.0
+
+
+def _is_large_tichu_decision(combos: list) -> bool:
+    """True iff this decision point is the large-Tichu call/decline choice --
+    always exactly the two `bool` pseudo-actions `True`/`False`, distinguishable
+    from every other decision (`Combo` or `None`) at a glance."""
+    return len(combos) == 2 and all(isinstance(combo, bool) for combo in combos)
+
+
+def _sample_action_index(
+    combos: list,
+    probs: np.ndarray,
+    rng: random.Random,
+    epsilon_large_tichu: float,
+) -> int:
+    """Picks which of `combos` to play. Ordinarily samples from the policy's
+    own `probs`; but for the large-Tichu call/decline decision specifically,
+    forces a uniform-random choice with probability `epsilon_large_tichu`.
+    Only ever calling on the best hands makes this a rare binary decision that
+    entropy regularization alone can't teach the network to condition on hand
+    strength -- real sampling probability on a "call" logit stays too low for
+    policy gradients to ever see enough call outcomes to learn from. Trick-play
+    decisions are left untouched: they already get plenty of exploration from
+    entropy regularization, and forcing a uniform choice among dozens of legal
+    combos would be far more disruptive than helpful."""
+    if _is_large_tichu_decision(combos) and rng.random() < epsilon_large_tichu:
+        return rng.randrange(len(combos))
+    return rng.choices(range(len(combos)), weights=probs.tolist(), k=1)[0]
+
 
 class HeuristicOpponentAdapter:
     """Adapts an agent whose `choose_action` takes only `legal_actions` (e.g.
@@ -73,6 +103,7 @@ def play_self_play_round(
     network: TichuPolicyValueNet,
     rng: random.Random,
     opponent: object | None = None,
+    epsilon_large_tichu: float = DEFAULT_EPSILON_LARGE_TICHU,
 ) -> list[list[Transition]]:
     """Plays one full round with `network` seated at team0 (seats 0, 2) and
     returns one trajectory per player: every trick-play decision that seat
@@ -89,7 +120,10 @@ def play_self_play_round(
     Each network turn's offered legal actions are scored into a probability
     distribution and one is sampled -- self-play data generation needs
     exploration, not the best move, so this always samples rather than taking
-    the argmax.
+    the argmax. `epsilon_large_tichu` additionally forces a uniform-random
+    call/decline choice on the large-Tichu decision specifically, with that
+    probability (see `_sample_action_index`); left at its default of 0.0,
+    behavior is unchanged from before this parameter existed.
 
     The round's final reward (own team's `score_round` delta minus the
     opposing team's) is written onto the *last* transition of each player
@@ -114,7 +148,7 @@ def play_self_play_round(
                     torch.as_tensor(result.observation, dtype=torch.float32),
                     torch.as_tensor(action_vectors, dtype=torch.float32),
                 ).numpy()
-            chosen_index = rng.choices(range(len(combos)), weights=probs.tolist(), k=1)[0]
+            chosen_index = _sample_action_index(combos, probs, rng, epsilon_large_tichu)
 
             per_player[player].append(
                 Transition(
@@ -148,6 +182,7 @@ def generate_self_play_games(
     rng: random.Random | None = None,
     opponent: object | None = None,
     opponent_factory: Callable[[], object | None] | None = None,
+    epsilon_large_tichu: float = DEFAULT_EPSILON_LARGE_TICHU,
 ) -> list[list[Transition]]:
     """Runs `num_games` self-play rounds and returns a flat list of
     per-player trajectories -- 4 per game, one per seat (some empty when
@@ -156,10 +191,15 @@ def generate_self_play_games(
     `opponent_factory`, if set, is called once per game to pick that game's
     team1 opponent afresh (e.g. a random draw from an `OpponentPool` mixed
     with heuristic agents) -- it takes precedence over the single, fixed
-    `opponent` for every game where it's set."""
+    `opponent` for every game where it's set.
+
+    `epsilon_large_tichu` is forwarded to `play_self_play_round` unchanged --
+    see there for what it does."""
     rng = rng if rng is not None else random.Random()
     episodes: list[list[Transition]] = []
     for _ in range(num_games):
         game_opponent = opponent_factory() if opponent_factory is not None else opponent
-        episodes.extend(play_self_play_round(network, rng, opponent=game_opponent))
+        episodes.extend(
+            play_self_play_round(network, rng, opponent=game_opponent, epsilon_large_tichu=epsilon_large_tichu)
+        )
     return episodes

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import os
 import random
 import warnings
 from dataclasses import dataclass
@@ -15,7 +16,13 @@ from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.heuristic import HeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 from training.opponent_pool import OpponentPool
-from training.self_play import HeuristicOpponentAdapter, PolicyOpponent, Transition, generate_self_play_games
+from training.self_play import (
+    DEFAULT_EPSILON_LARGE_TICHU,
+    HeuristicOpponentAdapter,
+    PolicyOpponent,
+    Transition,
+    generate_self_play_games,
+)
 
 DEFAULT_CHECKPOINT_DIR = Path("checkpoints")
 DEFAULT_METRICS_PATH = Path("checkpoints/metrics.csv")
@@ -52,6 +59,65 @@ def _atomic_torch_save(obj: object, path: Path) -> None:
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     torch.save(obj, tmp_path)
     tmp_path.replace(path)
+
+
+class TrainingAlreadyRunningError(RuntimeError):
+    """Raised when `train()` finds a live process's lock already held on its
+    target `checkpoint_dir` -- see `_acquire_training_lock`."""
+
+
+def _training_lock_path(checkpoint_dir: Path) -> Path:
+    return checkpoint_dir / "RUNNING.lock"
+
+
+def _is_pid_alive(pid: int) -> bool:
+    """Linux-only (this project's `ai/` code only ever runs inside the Docker
+    container -- see CLAUDE.md): a PID has a live process iff `/proc/<pid>`
+    exists. Cheaper and more portable across minimal container images than
+    sending a real signal, and needs no special-casing for PIDs this process
+    doesn't have permission to signal (a container's own PIDs are always
+    owned by the same root user here)."""
+    return Path(f"/proc/{pid}").exists()
+
+
+def _write_training_lock(checkpoint_dir: Path, pid: int) -> None:
+    _training_lock_path(checkpoint_dir).write_text(f"{pid}\n")
+
+
+def _read_training_lock_pid(checkpoint_dir: Path) -> int | None:
+    lock_path = _training_lock_path(checkpoint_dir)
+    if not lock_path.exists():
+        return None
+    try:
+        return int(lock_path.read_text().strip())
+    except ValueError:
+        return None
+
+
+def _acquire_training_lock(checkpoint_dir: Path) -> None:
+    """Refuses to start a second concurrent `train()` run against the same
+    `checkpoint_dir`: two runs racing to write the same `checkpoint_*.pt` and
+    `metrics.csv` files silently corrupt both (this happened for real -- see
+    the `2026-09-12-m2-stage0-baseline` session log). A lock file visible in
+    the checkpoint directory itself, rather than any one session remembering
+    what it launched, is what lets a *different* Claude Code session (sharing
+    the same long-lived Docker container, with no memory of this one) detect
+    the conflict too.
+
+    A lock whose recorded PID is no longer alive (the owning process crashed,
+    or was `kill -9`'d, which skips any `finally`-block cleanup) is treated as
+    stale and silently overwritten -- see `_is_pid_alive`."""
+    existing_pid = _read_training_lock_pid(checkpoint_dir)
+    if existing_pid is not None and _is_pid_alive(existing_pid):
+        raise TrainingAlreadyRunningError(
+            f"a training run (pid {existing_pid}) already holds the lock on {checkpoint_dir} -- "
+            "if you're sure it's not actually running, remove RUNNING.lock from that directory and retry."
+        )
+    _write_training_lock(checkpoint_dir, pid=os.getpid())
+
+
+def _release_training_lock(checkpoint_dir: Path) -> None:
+    _training_lock_path(checkpoint_dir).unlink(missing_ok=True)
 
 
 def find_latest_training_state(checkpoint_dir: Path) -> Path | None:
@@ -283,6 +349,7 @@ def train(
     opponent_pool: OpponentPool | None = None,
     ppo_epochs: int | None = None,
     clip_epsilon: float = DEFAULT_CLIP_EPSILON,
+    epsilon_large_tichu: float = DEFAULT_EPSILON_LARGE_TICHU,
     rng: random.Random | None = None,
     checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
     checkpoint_every: int = 10,
@@ -304,6 +371,12 @@ def train(
     team1's seats every game (see `training.self_play.play_self_play_round`); only
     team0's transitions -- the network's own -- ever feed the loss. Left `None`,
     `network` mirrors itself at all 4 seats, as before.
+
+    `epsilon_large_tichu` is forwarded to `generate_self_play_games`/
+    `play_self_play_round` unchanged: with that probability, the large-Tichu
+    call/decline decision is forced to a uniform-random choice instead of
+    policy-weighted sampling, on `network`'s own turns only. Left at its
+    default of 0.0, behavior is unchanged from before this parameter existed.
 
     `opponent_pool`, if set, takes precedence over `opponent`: each game's team1
     opponent is instead an equal-weight random draw among {a frozen snapshot from
@@ -395,7 +468,56 @@ def train(
                 scheduler.step()
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    _acquire_training_lock(checkpoint_dir)
+    try:
+        history = _run_training_loop(
+            network=network,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            rng=rng,
+            start_iteration=start_iteration,
+            iterations=iterations,
+            games_per_iteration=games_per_iteration,
+            reward_scale=reward_scale,
+            entropy_coef=entropy_coef,
+            opponent=opponent,
+            opponent_pool=opponent_pool,
+            ppo_epochs=ppo_epochs,
+            clip_epsilon=clip_epsilon,
+            epsilon_large_tichu=epsilon_large_tichu,
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_every=checkpoint_every,
+            metrics_path=metrics_path,
+        )
+    finally:
+        _release_training_lock(checkpoint_dir)
+    return history
 
+
+def _run_training_loop(
+    *,
+    network: TichuPolicyValueNet,
+    optimizer: optim.Optimizer,
+    scheduler: optim.lr_scheduler.LRScheduler | None,
+    rng: random.Random,
+    start_iteration: int,
+    iterations: int,
+    games_per_iteration: int,
+    reward_scale: float,
+    entropy_coef: float,
+    opponent: object | None,
+    opponent_pool: OpponentPool | None,
+    ppo_epochs: int | None,
+    clip_epsilon: float,
+    epsilon_large_tichu: float,
+    checkpoint_dir: Path,
+    checkpoint_every: int,
+    metrics_path: Path,
+) -> list[IterationMetrics]:
+    """The self-play/update loop itself, factored out of `train()` so the lock
+    acquired there (see `_acquire_training_lock`) covers this in a single
+    `try`/`finally` without an extra indentation level around the whole
+    function body."""
     history: list[IterationMetrics] = []
     write_header = not (metrics_path.exists() and metrics_path.stat().st_size > 0)
     with metrics_path.open("w" if write_header else "a", newline="") as metrics_file:
@@ -411,7 +533,12 @@ def train(
                 (lambda: _sample_pool_mix_opponent(opponent_pool, rng)) if opponent_pool is not None else None
             )
             episodes = generate_self_play_games(
-                network, games_per_iteration, rng=rng, opponent=opponent, opponent_factory=opponent_factory
+                network,
+                games_per_iteration,
+                rng=rng,
+                opponent=opponent,
+                opponent_factory=opponent_factory,
+                epsilon_large_tichu=epsilon_large_tichu,
             )
 
             if ppo_epochs is not None:
@@ -525,6 +652,13 @@ def _main() -> None:
         default=DEFAULT_CLIP_EPSILON,
         help="PPO's trust-region width; only used when --ppo-epochs is set.",
     )
+    parser.add_argument(
+        "--epsilon-large-tichu",
+        type=float,
+        default=DEFAULT_EPSILON_LARGE_TICHU,
+        help="Force a uniform-random large-Tichu call/decline choice with this probability, "
+        "on the network's own turns, instead of always sampling from its policy.",
+    )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--checkpoint-every", type=int, default=10)
     parser.add_argument("--metrics-path", type=Path, default=DEFAULT_METRICS_PATH)
@@ -589,6 +723,7 @@ def _main() -> None:
         opponent_pool=opponent_pool,
         ppo_epochs=args.ppo_epochs,
         clip_epsilon=args.clip_epsilon,
+        epsilon_large_tichu=args.epsilon_large_tichu,
         rng=rng,
         checkpoint_dir=args.checkpoint_dir,
         checkpoint_every=args.checkpoint_every,

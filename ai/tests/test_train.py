@@ -1,3 +1,4 @@
+import os
 import random
 import sys
 from dataclasses import replace
@@ -394,9 +395,16 @@ def test_train_forwards_its_opponent_straight_through_to_self_play(tmp_path: Pat
     seen_opponents = []
     real_generate = train_module.generate_self_play_games
 
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None):
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_large_tichu=0.0):
         seen_opponents.append(opponent)
-        return real_generate(network, num_games, rng=rng, opponent=opponent, opponent_factory=opponent_factory)
+        return real_generate(
+            network,
+            num_games,
+            rng=rng,
+            opponent=opponent,
+            opponent_factory=opponent_factory,
+            epsilon_large_tichu=epsilon_large_tichu,
+        )
 
     monkeypatch.setattr(train_module, "generate_self_play_games", spy)
     opponent = AdvancedHeuristicAgent()
@@ -413,6 +421,81 @@ def test_train_forwards_its_opponent_straight_through_to_self_play(tmp_path: Pat
     )
 
     assert seen_opponents == [opponent, opponent]
+
+
+def test_train_forwards_epsilon_large_tichu_straight_through_to_self_play(tmp_path: Path, monkeypatch):
+    seen_epsilons = []
+    real_generate = train_module.generate_self_play_games
+
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_large_tichu=0.0):
+        seen_epsilons.append(epsilon_large_tichu)
+        return real_generate(
+            network,
+            num_games,
+            rng=rng,
+            opponent=opponent,
+            opponent_factory=opponent_factory,
+            epsilon_large_tichu=epsilon_large_tichu,
+        )
+
+    monkeypatch.setattr(train_module, "generate_self_play_games", spy)
+
+    train(
+        _small_network(),
+        iterations=2,
+        games_per_iteration=2,
+        epsilon_large_tichu=0.2,
+        rng=random.Random(15),
+        checkpoint_dir=tmp_path / "checkpoints",
+        checkpoint_every=100,
+        metrics_path=tmp_path / "metrics.csv",
+    )
+
+    assert seen_epsilons == [0.2, 0.2]
+
+
+def test_cli_epsilon_large_tichu_flag_reaches_train(tmp_path: Path, monkeypatch):
+    seen_epsilons = []
+    real_generate = train_module.generate_self_play_games
+
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_large_tichu=0.0):
+        seen_epsilons.append(epsilon_large_tichu)
+        return real_generate(
+            network,
+            num_games,
+            rng=rng,
+            opponent=opponent,
+            opponent_factory=opponent_factory,
+            epsilon_large_tichu=epsilon_large_tichu,
+        )
+
+    monkeypatch.setattr(train_module, "generate_self_play_games", spy)
+    checkpoint_dir = tmp_path / "checkpoints"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train.py",
+            "--iterations",
+            "1",
+            "--games-per-iteration",
+            "2",
+            "--checkpoint-dir",
+            str(checkpoint_dir),
+            "--checkpoint-every",
+            "1",
+            "--metrics-path",
+            str(checkpoint_dir / "metrics.csv"),
+            "--seed",
+            "16",
+            "--epsilon-large-tichu",
+            "0.2",
+        ],
+    )
+
+    train_module._main()
+
+    assert seen_epsilons == [0.2]
 
 
 def test_train_runs_to_completion_against_a_fixed_heuristic_opponent(tmp_path: Path):
@@ -934,9 +1017,16 @@ def test_train_forwards_an_opponent_factory_when_opponent_pool_is_set(tmp_path: 
     seen_factories = []
     real_generate = train_module.generate_self_play_games
 
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None):
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_large_tichu=0.0):
         seen_factories.append(opponent_factory)
-        return real_generate(network, num_games, rng=rng, opponent=opponent, opponent_factory=opponent_factory)
+        return real_generate(
+            network,
+            num_games,
+            rng=rng,
+            opponent=opponent,
+            opponent_factory=opponent_factory,
+            epsilon_large_tichu=epsilon_large_tichu,
+        )
 
     monkeypatch.setattr(train_module, "generate_self_play_games", spy)
     pool = OpponentPool()
@@ -1290,5 +1380,104 @@ def test_cli_warm_start_from_loads_a_prior_checkpoint_before_training(tmp_path: 
     )
 
     train_module._main()
+
+
+def test_training_lock_file_is_removed_after_a_run_completes_normally(tmp_path: Path):
+    checkpoint_dir = tmp_path / "checkpoints"
+
+    train(
+        _small_network(),
+        iterations=2,
+        games_per_iteration=2,
+        rng=random.Random(21),
+        checkpoint_dir=checkpoint_dir,
+        checkpoint_every=100,
+        metrics_path=tmp_path / "metrics.csv",
+    )
+
+    assert not (checkpoint_dir / "RUNNING.lock").exists()
+
+
+def test_training_lock_file_is_removed_even_when_the_run_raises(tmp_path: Path, monkeypatch):
+    checkpoint_dir = tmp_path / "checkpoints"
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("self-play blew up")
+
+    monkeypatch.setattr(train_module, "generate_self_play_games", boom)
+
+    with pytest.raises(RuntimeError, match="self-play blew up"):
+        train(
+            _small_network(),
+            iterations=2,
+            games_per_iteration=2,
+            rng=random.Random(22),
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_every=100,
+            metrics_path=tmp_path / "metrics.csv",
+        )
+
+    assert not (checkpoint_dir / "RUNNING.lock").exists()
+
+
+def test_train_refuses_to_start_when_a_lock_from_a_live_process_already_exists(tmp_path: Path, monkeypatch):
+    checkpoint_dir = tmp_path / "checkpoints"
+    checkpoint_dir.mkdir(parents=True)
+    train_module._write_training_lock(checkpoint_dir, pid=os.getpid())
+
+    generate_calls = []
+    monkeypatch.setattr(
+        train_module,
+        "generate_self_play_games",
+        lambda *args, **kwargs: generate_calls.append(1) or [],
+    )
+
+    with pytest.raises(train_module.TrainingAlreadyRunningError):
+        train(
+            _small_network(),
+            iterations=1,
+            games_per_iteration=2,
+            rng=random.Random(23),
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_every=100,
+            metrics_path=tmp_path / "metrics.csv",
+        )
+
+    assert not generate_calls, "must refuse before ever generating self-play data"
+    # The live process's lock is left untouched -- it does not belong to this run.
+    assert (checkpoint_dir / "RUNNING.lock").exists()
+
+
+def test_train_overwrites_a_stale_lock_from_a_pid_that_no_longer_exists(tmp_path: Path):
+    checkpoint_dir = tmp_path / "checkpoints"
+    checkpoint_dir.mkdir(parents=True)
+    dead_pid = _find_a_dead_pid()
+    train_module._write_training_lock(checkpoint_dir, pid=dead_pid)
+
+    history = train(
+        _small_network(),
+        iterations=1,
+        games_per_iteration=2,
+        rng=random.Random(24),
+        checkpoint_dir=checkpoint_dir,
+        checkpoint_every=100,
+        metrics_path=tmp_path / "metrics.csv",
+    )
+
+    assert [m.iteration for m in history] == [1]
+    assert not (checkpoint_dir / "RUNNING.lock").exists()
+
+
+def _find_a_dead_pid() -> int:
+    """Spawns and immediately reaps a child process, returning its now-dead PID --
+    a PID guaranteed not to belong to any live process, for testing stale-lock
+    recovery without hardcoding a fragile fixed number."""
+    pid = os.fork() if hasattr(os, "fork") else None
+    if pid is None:
+        raise RuntimeError("os.fork is unavailable on this platform; this test requires Linux (Docker)")
+    if pid == 0:
+        os._exit(0)
+    os.waitpid(pid, 0)
+    return pid
 
     assert (checkpoint_dir / "checkpoint_1.pt").exists()

@@ -7,7 +7,13 @@ from tichu_env.scoring import TEAM_OF
 
 from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
-from training.self_play import PolicyOpponent, Transition, generate_self_play_games, play_self_play_round
+from training.self_play import (
+    PolicyOpponent,
+    Transition,
+    _sample_action_index,
+    generate_self_play_games,
+    play_self_play_round,
+)
 
 
 def _small_network() -> TichuPolicyValueNet:
@@ -158,4 +164,61 @@ def test_transition_is_immutable():
     except AttributeError:
         pass
 
-    assert isinstance(transition, Transition)
+
+def test_sample_action_index_ignores_epsilon_for_non_large_tichu_decisions():
+    # A trick-play decision offers Combo/None candidates, never plain bools --
+    # epsilon-greedy forcing must never touch these, even at epsilon=1.0.
+    combos = [None, "combo-stand-in"]
+    probs = np.array([0.95, 0.05])
+
+    chosen = [
+        _sample_action_index(combos, probs, random.Random(seed), epsilon_large_tichu=1.0) for seed in range(200)
+    ]
+
+    index0_rate = sum(1 for index in chosen if index == 0) / len(chosen)
+    assert index0_rate > 0.8, (
+        f"non-large-tichu decisions must stay policy-weighted even at epsilon=1.0, got index0_rate={index0_rate}"
+    )
+
+
+def test_sample_action_index_never_forces_random_when_epsilon_is_zero():
+    combos = [True, False]
+    probs = np.array([0.0, 1.0])  # policy always prefers declining (index 1)
+
+    for seed in range(20):
+        index = _sample_action_index(combos, probs, random.Random(seed), epsilon_large_tichu=0.0)
+        assert index == 1
+
+
+def test_sample_action_index_always_forces_uniform_choice_when_epsilon_is_one():
+    combos = [True, False]
+    probs = np.array([0.0, 1.0])  # policy would otherwise always decline
+
+    chosen = [_sample_action_index(combos, probs, random.Random(seed), epsilon_large_tichu=1.0) for seed in range(200)]
+
+    call_rate = sum(1 for index in chosen if index == 0) / len(chosen)
+    assert 0.35 < call_rate < 0.65, f"epsilon=1.0 should force a roughly uniform choice, got call_rate={call_rate}"
+
+
+def test_play_self_play_round_threads_epsilon_large_tichu_into_real_rounds():
+    network = _small_network()
+    call_count = 0
+    total = 0
+    for seed in range(100):
+        trajectories = play_self_play_round(network, rng=random.Random(seed), epsilon_large_tichu=1.0)
+        for trajectory in trajectories:
+            if not trajectory:
+                continue
+            # Each player's first-ever decision in a round is the large-Tichu
+            # call/decline choice (Phase.LARGE_TICHU precedes everything else).
+            first_transition = trajectory[0]
+            assert first_transition.action_vectors.shape[0] == 2
+            total += 1
+            if first_transition.chosen_index == 0:
+                call_count += 1
+
+    call_rate = call_count / total
+    assert 0.35 < call_rate < 0.65, (
+        f"epsilon_large_tichu=1.0 should force roughly half of large-Tichu decisions to 'call', "
+        f"got call_rate={call_rate} over {total} decisions"
+    )
