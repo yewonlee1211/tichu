@@ -45,6 +45,11 @@ class GameState:
     # derived) since exchanged-card choice is real strategic signal in Tichu
     # that the observation encoder needs to expose going forward.
     received_from: tuple[dict[int, Card], ...] = field(default_factory=lambda: tuple({} for _ in range(NUM_PLAYERS)))
+    # Whether each player has passed through the (small) Tichu call/decline
+    # decision point yet -- needed because `tichu_calls` alone is bool, not
+    # bool | None, so it can't distinguish "declined" from "hasn't been asked
+    # yet" the way `large_tichu_calls` can. See `is_awaiting_tichu_decision`.
+    tichu_decided: tuple[bool, ...] = field(default_factory=lambda: (False,) * NUM_PLAYERS)
 
 
 def deal_new_round(rng: random.Random | None = None) -> GameState:
@@ -115,6 +120,39 @@ def call_tichu(state: GameState, player: int) -> GameState:
     calls = list(state.tichu_calls)
     calls[player] = True
     return replace(state, tichu_calls=tuple(calls))
+
+
+def is_awaiting_tichu_decision(state: GameState, player: int) -> bool:
+    """True iff `player` is exactly at the point where the (small) Tichu
+    call/decline decision should be offered before any trick-play action:
+    the playing phase has started, `player` hasn't decided yet, and they
+    still hold the full 14-card hand (their first card of the round hasn't
+    been played). This is the simplified "decide at your first play" window
+    the M2 curriculum settled on, rather than the real rule's "anytime before
+    your first play" (which would also allow deciding mid-EXCHANGE)."""
+    return state.phase is Phase.PLAYING and not state.tichu_decided[player] and len(state.hands[player]) == 14
+
+
+def decide_tichu(state: GameState, player: int, called: bool) -> GameState:
+    if state.phase is not Phase.PLAYING:
+        raise ValueError("tichu can only be decided during the playing phase")
+    if state.tichu_decided[player]:
+        raise ValueError("player has already decided on tichu")
+    if player != state.current_player:
+        raise ValueError("it is not this player's turn to decide on tichu")
+    if len(state.hands[player]) != 14:
+        raise ValueError("tichu can only be decided while still holding all 14 cards")
+
+    decided = list(state.tichu_decided)
+    decided[player] = True
+    state = replace(state, tichu_decided=tuple(decided))
+
+    if called:
+        calls = list(state.tichu_calls)
+        calls[player] = True
+        state = replace(state, tichu_calls=tuple(calls))
+
+    return state
 
 
 def exchange_cards(state: GameState, gifts: dict[int, dict[int, Card]]) -> GameState:

@@ -17,7 +17,7 @@ from agents.heuristic import HeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 from training.opponent_pool import OpponentPool
 from training.self_play import (
-    DEFAULT_EPSILON_LARGE_TICHU,
+    DEFAULT_EPSILON_BINARY_CALL,
     HeuristicOpponentAdapter,
     PolicyOpponent,
     Transition,
@@ -349,7 +349,7 @@ def train(
     opponent_pool: OpponentPool | None = None,
     ppo_epochs: int | None = None,
     clip_epsilon: float = DEFAULT_CLIP_EPSILON,
-    epsilon_large_tichu: float = DEFAULT_EPSILON_LARGE_TICHU,
+    epsilon_binary_call: float = DEFAULT_EPSILON_BINARY_CALL,
     rng: random.Random | None = None,
     checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
     checkpoint_every: int = 10,
@@ -372,11 +372,12 @@ def train(
     team0's transitions -- the network's own -- ever feed the loss. Left `None`,
     `network` mirrors itself at all 4 seats, as before.
 
-    `epsilon_large_tichu` is forwarded to `generate_self_play_games`/
+    `epsilon_binary_call` is forwarded to `generate_self_play_games`/
     `play_self_play_round` unchanged: with that probability, the large-Tichu
-    call/decline decision is forced to a uniform-random choice instead of
-    policy-weighted sampling, on `network`'s own turns only. Left at its
-    default of 0.0, behavior is unchanged from before this parameter existed.
+    or (small) Tichu call/decline decision is forced to a uniform-random
+    choice instead of policy-weighted sampling, on `network`'s own turns
+    only. Left at its default of 0.0, behavior is unchanged from before this
+    parameter existed.
 
     `opponent_pool`, if set, takes precedence over `opponent`: each game's team1
     opponent is instead an equal-weight random draw among {a frozen snapshot from
@@ -484,7 +485,7 @@ def train(
             opponent_pool=opponent_pool,
             ppo_epochs=ppo_epochs,
             clip_epsilon=clip_epsilon,
-            epsilon_large_tichu=epsilon_large_tichu,
+            epsilon_binary_call=epsilon_binary_call,
             checkpoint_dir=checkpoint_dir,
             checkpoint_every=checkpoint_every,
             metrics_path=metrics_path,
@@ -509,7 +510,7 @@ def _run_training_loop(
     opponent_pool: OpponentPool | None,
     ppo_epochs: int | None,
     clip_epsilon: float,
-    epsilon_large_tichu: float,
+    epsilon_binary_call: float,
     checkpoint_dir: Path,
     checkpoint_every: int,
     metrics_path: Path,
@@ -538,7 +539,7 @@ def _run_training_loop(
                 rng=rng,
                 opponent=opponent,
                 opponent_factory=opponent_factory,
-                epsilon_large_tichu=epsilon_large_tichu,
+                epsilon_binary_call=epsilon_binary_call,
             )
 
             if ppo_epochs is not None:
@@ -653,11 +654,12 @@ def _main() -> None:
         help="PPO's trust-region width; only used when --ppo-epochs is set.",
     )
     parser.add_argument(
-        "--epsilon-large-tichu",
+        "--epsilon-binary-call",
         type=float,
-        default=DEFAULT_EPSILON_LARGE_TICHU,
-        help="Force a uniform-random large-Tichu call/decline choice with this probability, "
-        "on the network's own turns, instead of always sampling from its policy.",
+        default=DEFAULT_EPSILON_BINARY_CALL,
+        help="Force a uniform-random large-Tichu or (small) Tichu call/decline choice with "
+        "this probability, on the network's own turns, instead of always sampling from its "
+        "policy.",
     )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--checkpoint-every", type=int, default=10)
@@ -723,7 +725,7 @@ def _main() -> None:
         opponent_pool=opponent_pool,
         ppo_epochs=args.ppo_epochs,
         clip_epsilon=args.clip_epsilon,
-        epsilon_large_tichu=args.epsilon_large_tichu,
+        epsilon_binary_call=args.epsilon_binary_call,
         rng=rng,
         checkpoint_dir=args.checkpoint_dir,
         checkpoint_every=args.checkpoint_every,

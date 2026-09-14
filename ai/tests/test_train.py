@@ -395,7 +395,7 @@ def test_train_forwards_its_opponent_straight_through_to_self_play(tmp_path: Pat
     seen_opponents = []
     real_generate = train_module.generate_self_play_games
 
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_large_tichu=0.0):
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_binary_call=0.0):
         seen_opponents.append(opponent)
         return real_generate(
             network,
@@ -403,7 +403,7 @@ def test_train_forwards_its_opponent_straight_through_to_self_play(tmp_path: Pat
             rng=rng,
             opponent=opponent,
             opponent_factory=opponent_factory,
-            epsilon_large_tichu=epsilon_large_tichu,
+            epsilon_binary_call=epsilon_binary_call,
         )
 
     monkeypatch.setattr(train_module, "generate_self_play_games", spy)
@@ -423,19 +423,19 @@ def test_train_forwards_its_opponent_straight_through_to_self_play(tmp_path: Pat
     assert seen_opponents == [opponent, opponent]
 
 
-def test_train_forwards_epsilon_large_tichu_straight_through_to_self_play(tmp_path: Path, monkeypatch):
+def test_train_forwards_epsilon_binary_call_straight_through_to_self_play(tmp_path: Path, monkeypatch):
     seen_epsilons = []
     real_generate = train_module.generate_self_play_games
 
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_large_tichu=0.0):
-        seen_epsilons.append(epsilon_large_tichu)
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_binary_call=0.0):
+        seen_epsilons.append(epsilon_binary_call)
         return real_generate(
             network,
             num_games,
             rng=rng,
             opponent=opponent,
             opponent_factory=opponent_factory,
-            epsilon_large_tichu=epsilon_large_tichu,
+            epsilon_binary_call=epsilon_binary_call,
         )
 
     monkeypatch.setattr(train_module, "generate_self_play_games", spy)
@@ -444,7 +444,7 @@ def test_train_forwards_epsilon_large_tichu_straight_through_to_self_play(tmp_pa
         _small_network(),
         iterations=2,
         games_per_iteration=2,
-        epsilon_large_tichu=0.2,
+        epsilon_binary_call=0.2,
         rng=random.Random(15),
         checkpoint_dir=tmp_path / "checkpoints",
         checkpoint_every=100,
@@ -454,19 +454,19 @@ def test_train_forwards_epsilon_large_tichu_straight_through_to_self_play(tmp_pa
     assert seen_epsilons == [0.2, 0.2]
 
 
-def test_cli_epsilon_large_tichu_flag_reaches_train(tmp_path: Path, monkeypatch):
+def test_cli_epsilon_binary_call_flag_reaches_train(tmp_path: Path, monkeypatch):
     seen_epsilons = []
     real_generate = train_module.generate_self_play_games
 
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_large_tichu=0.0):
-        seen_epsilons.append(epsilon_large_tichu)
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_binary_call=0.0):
+        seen_epsilons.append(epsilon_binary_call)
         return real_generate(
             network,
             num_games,
             rng=rng,
             opponent=opponent,
             opponent_factory=opponent_factory,
-            epsilon_large_tichu=epsilon_large_tichu,
+            epsilon_binary_call=epsilon_binary_call,
         )
 
     monkeypatch.setattr(train_module, "generate_self_play_games", spy)
@@ -488,7 +488,7 @@ def test_cli_epsilon_large_tichu_flag_reaches_train(tmp_path: Path, monkeypatch)
             str(checkpoint_dir / "metrics.csv"),
             "--seed",
             "16",
-            "--epsilon-large-tichu",
+            "--epsilon-binary-call",
             "0.2",
         ],
     )
@@ -1017,7 +1017,7 @@ def test_train_forwards_an_opponent_factory_when_opponent_pool_is_set(tmp_path: 
     seen_factories = []
     real_generate = train_module.generate_self_play_games
 
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_large_tichu=0.0):
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_binary_call=0.0):
         seen_factories.append(opponent_factory)
         return real_generate(
             network,
@@ -1025,7 +1025,7 @@ def test_train_forwards_an_opponent_factory_when_opponent_pool_is_set(tmp_path: 
             rng=rng,
             opponent=opponent,
             opponent_factory=opponent_factory,
-            epsilon_large_tichu=epsilon_large_tichu,
+            epsilon_binary_call=epsilon_binary_call,
         )
 
     monkeypatch.setattr(train_module, "generate_self_play_games", spy)

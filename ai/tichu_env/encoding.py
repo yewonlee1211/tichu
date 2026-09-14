@@ -6,7 +6,7 @@ import numpy as np
 
 from tichu_env.cards import Card, Rank, create_deck
 from tichu_env.combinations import Combo, ComboType
-from tichu_env.state import NUM_PLAYERS, GameState, Phase, legal_combos
+from tichu_env.state import NUM_PLAYERS, GameState, Phase, is_awaiting_tichu_decision, legal_combos
 
 CARD_ORDER: tuple[Card, ...] = create_deck()
 CARD_INDEX: dict[Card, int] = {card: i for i, card in enumerate(CARD_ORDER)}
@@ -73,11 +73,14 @@ OBS_DIM = (
 
 # --- Action layout -----------------------------------------------------------
 # cards used, combo type, length, rank strength, is_lone_phoenix,
-# is_large_tichu_call, is_large_tichu_decline, is_pass (kept last so it stays
-# addressable as vec[-1], matching every existing PASS-detection call site).
+# is_large_tichu_call, is_large_tichu_decline, is_tichu_call, is_tichu_decline,
+# is_pass (kept last so it stays addressable as vec[-1], matching every
+# existing PASS-detection call site).
 _LARGE_TICHU_CALL_OFFSET = 3
 _LARGE_TICHU_DECLINE_OFFSET = 4
-ACTION_DIM = NUM_CARDS + NUM_COMBO_TYPES + 6
+_TICHU_CALL_OFFSET = 5
+_TICHU_DECLINE_OFFSET = 6
+ACTION_DIM = NUM_CARDS + NUM_COMBO_TYPES + 8
 
 
 def encode_observation(state: GameState, player: int) -> np.ndarray:
@@ -133,6 +136,18 @@ def encode_large_tichu_action(called: bool) -> np.ndarray:
     return vec
 
 
+def encode_tichu_action(called: bool) -> np.ndarray:
+    """Encode the (small) Tichu call/decline pseudo-action offered once per
+    player right before their first trick-play action (see
+    `state.is_awaiting_tichu_decision`). Same flag-bit pattern as
+    `encode_large_tichu_action`, in its own disjoint pair of offsets so the
+    network can tell the two decisions apart."""
+    vec = np.zeros(ACTION_DIM, dtype=np.float32)
+    offset = _TICHU_CALL_OFFSET if called else _TICHU_DECLINE_OFFSET
+    vec[NUM_CARDS + NUM_COMBO_TYPES + offset] = 1.0
+    return vec
+
+
 def encode_legal_actions(state: GameState, player: int) -> list[tuple[Combo | bool | None, np.ndarray]]:
     """All legal candidate actions for `player` right now, each paired with its
     encoded vector.
@@ -142,7 +157,12 @@ def encode_legal_actions(state: GameState, player: int) -> list[tuple[Combo | bo
     that player's turn to decide (see `state.decide_large_tichu`'s
     `current_player` bookkeeping) -- everyone else sees no legal actions yet.
 
-    Otherwise (trick play), PASS (`None`) is included only when it is
+    Once playing has started, a player who hasn't yet decided on the (small)
+    Tichu call and still holds their full 14-card hand sees the same kind of
+    call/decline choice instead of trick-play candidates, gated the same way
+    (only once it is their turn -- see `state.is_awaiting_tichu_decision`).
+
+    Otherwise (ordinary trick play), PASS (`None`) is included only when it is
     actually `player`'s turn and there is a current trick to pass on (you
     cannot pass while leading, and a non-turn player may only interrupt with
     a bomb, never pass)."""
@@ -150,6 +170,11 @@ def encode_legal_actions(state: GameState, player: int) -> list[tuple[Combo | bo
         if player != state.current_player:
             return []
         return [(True, encode_large_tichu_action(True)), (False, encode_large_tichu_action(False))]
+
+    if is_awaiting_tichu_decision(state, player):
+        if player != state.current_player:
+            return []
+        return [(True, encode_tichu_action(True)), (False, encode_tichu_action(False))]
 
     candidates: list[Combo | None] = list(legal_combos(state, player))
     if state.current_best is not None and player == state.current_player:

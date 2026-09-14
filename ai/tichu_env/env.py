@@ -16,8 +16,10 @@ from tichu_env.state import (
     GameState,
     Phase,
     decide_large_tichu,
+    decide_tichu,
     deal_new_round,
     exchange_cards,
+    is_awaiting_tichu_decision,
     legal_combos,
     pass_turn,
     play_combo,
@@ -38,11 +40,13 @@ class StepResult:
 class TichuEnv:
     """A single-round Tichu environment. The RL action space currently
     covers the large-Tichu call/decline decision (`Phase.LARGE_TICHU`, one
-    per player, `True`/`False`) and trick play (`Phase.PLAYING`, a `Combo` or
-    `None` to pass). Card exchange and (small) Tichu calls are still
-    auto-resolved with fixed non-strategic defaults so every episode reaches
-    trick play; those remain the next decisions to expose (see
-    .claude/plans/tichu-m2-action-space-curriculum.plan.md)."""
+    per player, `True`/`False`), the (small) Tichu call/decline decision
+    (offered once per player, right before their first `Phase.PLAYING`
+    action -- see `state.is_awaiting_tichu_decision`, also `True`/`False`),
+    and trick play (`Phase.PLAYING`, a `Combo` or `None` to pass). Card
+    exchange is still auto-resolved by a fixed heuristic (see
+    `_auto_exchange`) rather than exposed as a decision -- see
+    .claude/plans/tichu-m2-action-space-curriculum.plan.md's "결정 3" for why."""
 
     def __init__(self, rng: random.Random | None = None):
         self._rng = rng if rng is not None else random.Random()
@@ -72,6 +76,8 @@ class TichuEnv:
 
         if state.phase is Phase.LARGE_TICHU:
             new_state = self._step_large_tichu(state, player, action)
+        elif is_awaiting_tichu_decision(state, player):
+            new_state = self._step_tichu_decision(state, player, action)
         else:
             new_state = self._step_trick_play(state, player, action)
 
@@ -91,6 +97,11 @@ class TichuEnv:
         if new_state.phase is Phase.EXCHANGE:
             new_state = _auto_exchange(new_state)
         return new_state
+
+    def _step_tichu_decision(self, state: GameState, player: int, action: object) -> GameState:
+        if not isinstance(action, bool):
+            raise ValueError("during the tichu call/decline decision, the action must be True (call) or False (decline)")
+        return decide_tichu(state, player, called=action)
 
     def _step_trick_play(self, state: GameState, player: int, action: Combo | None) -> GameState:
         legal = legal_combos(state, player)

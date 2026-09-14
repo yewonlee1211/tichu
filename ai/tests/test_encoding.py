@@ -14,6 +14,7 @@ from tichu_env.encoding import (
     encode_large_tichu_action,
     encode_legal_actions,
     encode_observation,
+    encode_tichu_action,
 )
 from tichu_env.state import NUM_PLAYERS, GameState, Phase
 
@@ -38,6 +39,7 @@ def make_state(hands: dict[int, list[Card]], **overrides) -> GameState:
         collected_tricks=tuple(() for _ in range(NUM_PLAYERS)),
         large_tichu_calls=(True, True, True, True),
         tichu_calls=(False, False, False, False),
+        tichu_decided=(True, True, True, True),
         mahjong_wish=None,
     )
     base.update(overrides)
@@ -273,6 +275,82 @@ def test_encode_legal_actions_includes_pass_only_when_following():
 
     assert all(combo is not None for combo, _ in leading_actions)
     assert any(combo is None for combo, _ in following_actions)
+
+
+def _full_hand() -> list[Card]:
+    """14 distinct cards -- enough to satisfy `is_awaiting_tichu_decision`'s
+    full-hand check without needing deck-legal special ranks."""
+    numeric = [Rank.TWO, Rank.THREE, Rank.FOUR, Rank.FIVE, Rank.SIX, Rank.SEVEN, Rank.EIGHT, Rank.NINE, Rank.TEN]
+    suits = [Suit.SWORD, Suit.PAGODA, Suit.JADE, Suit.STAR]
+    cards = [card(rank, suit) for rank in numeric for suit in suits]
+    return cards[:14]
+
+
+def test_encode_tichu_call_and_decline_are_distinguishable_one_hot_flags():
+    called_vec = encode_tichu_action(True)
+    declined_vec = encode_tichu_action(False)
+
+    assert called_vec.shape == (ACTION_DIM,)
+    assert declined_vec.shape == (ACTION_DIM,)
+    assert called_vec.sum() == 1.0
+    assert declined_vec.sum() == 1.0
+    assert not np.array_equal(called_vec, declined_vec)
+    # Disjoint from PASS, a real combo, and the large-Tichu flags -- the
+    # network must be able to tell all of these decisions apart.
+    assert not np.array_equal(called_vec, encode_action(None))
+    assert not np.array_equal(declined_vec, encode_action(None))
+    assert not np.array_equal(called_vec, encode_large_tichu_action(True))
+    assert not np.array_equal(declined_vec, encode_large_tichu_action(False))
+
+
+def test_encode_legal_actions_offers_tichu_call_and_decline_before_the_first_play():
+    state = make_state(
+        {0: _full_hand()},
+        current_player=0,
+        tichu_decided=(False, False, False, False),
+    )
+
+    actions = encode_legal_actions(state, player=0)
+
+    assert {combo for combo, _ in actions} == {True, False}
+
+
+def test_encode_legal_actions_skips_tichu_decision_once_already_decided():
+    state = make_state(
+        {0: [card(Rank.FIVE)]},
+        current_player=0,
+        trick_leader=0,
+        current_best=None,
+        tichu_decided=(True, False, False, False),
+    )
+
+    actions = encode_legal_actions(state, player=0)
+
+    assert all(not isinstance(combo, bool) for combo, _ in actions)
+
+
+def test_encode_legal_actions_skips_tichu_decision_after_the_first_card_is_played():
+    state = make_state(
+        {0: [card(Rank.FIVE)]},  # only 1 card left -- already played 13
+        current_player=0,
+        trick_leader=0,
+        current_best=None,
+        tichu_decided=(False, False, False, False),
+    )
+
+    actions = encode_legal_actions(state, player=0)
+
+    assert all(not isinstance(combo, bool) for combo, _ in actions)
+
+
+def test_encode_legal_actions_for_tichu_decision_is_empty_before_a_seats_turn():
+    state = make_state(
+        {1: _full_hand()},
+        current_player=0,
+        tichu_decided=(True, False, False, False),
+    )
+
+    assert encode_legal_actions(state, player=1) == []
 
 
 def test_encode_legal_actions_never_offers_pass_to_a_non_turn_player():

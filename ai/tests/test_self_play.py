@@ -7,6 +7,8 @@ from tichu_env.scoring import TEAM_OF
 
 from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
+from tichu_env.encoding import encode_tichu_action
+
 from training.self_play import (
     PolicyOpponent,
     Transition,
@@ -165,19 +167,19 @@ def test_transition_is_immutable():
         pass
 
 
-def test_sample_action_index_ignores_epsilon_for_non_large_tichu_decisions():
+def test_sample_action_index_ignores_epsilon_for_non_binary_call_decisions():
     # A trick-play decision offers Combo/None candidates, never plain bools --
     # epsilon-greedy forcing must never touch these, even at epsilon=1.0.
     combos = [None, "combo-stand-in"]
     probs = np.array([0.95, 0.05])
 
     chosen = [
-        _sample_action_index(combos, probs, random.Random(seed), epsilon_large_tichu=1.0) for seed in range(200)
+        _sample_action_index(combos, probs, random.Random(seed), epsilon_binary_call=1.0) for seed in range(200)
     ]
 
     index0_rate = sum(1 for index in chosen if index == 0) / len(chosen)
     assert index0_rate > 0.8, (
-        f"non-large-tichu decisions must stay policy-weighted even at epsilon=1.0, got index0_rate={index0_rate}"
+        f"non-binary-call decisions must stay policy-weighted even at epsilon=1.0, got index0_rate={index0_rate}"
     )
 
 
@@ -186,7 +188,7 @@ def test_sample_action_index_never_forces_random_when_epsilon_is_zero():
     probs = np.array([0.0, 1.0])  # policy always prefers declining (index 1)
 
     for seed in range(20):
-        index = _sample_action_index(combos, probs, random.Random(seed), epsilon_large_tichu=0.0)
+        index = _sample_action_index(combos, probs, random.Random(seed), epsilon_binary_call=0.0)
         assert index == 1
 
 
@@ -194,18 +196,20 @@ def test_sample_action_index_always_forces_uniform_choice_when_epsilon_is_one():
     combos = [True, False]
     probs = np.array([0.0, 1.0])  # policy would otherwise always decline
 
-    chosen = [_sample_action_index(combos, probs, random.Random(seed), epsilon_large_tichu=1.0) for seed in range(200)]
+    chosen = [
+        _sample_action_index(combos, probs, random.Random(seed), epsilon_binary_call=1.0) for seed in range(200)
+    ]
 
     call_rate = sum(1 for index in chosen if index == 0) / len(chosen)
     assert 0.35 < call_rate < 0.65, f"epsilon=1.0 should force a roughly uniform choice, got call_rate={call_rate}"
 
 
-def test_play_self_play_round_threads_epsilon_large_tichu_into_real_rounds():
+def test_play_self_play_round_threads_epsilon_binary_call_into_the_large_tichu_decision():
     network = _small_network()
     call_count = 0
     total = 0
     for seed in range(100):
-        trajectories = play_self_play_round(network, rng=random.Random(seed), epsilon_large_tichu=1.0)
+        trajectories = play_self_play_round(network, rng=random.Random(seed), epsilon_binary_call=1.0)
         for trajectory in trajectories:
             if not trajectory:
                 continue
@@ -219,6 +223,35 @@ def test_play_self_play_round_threads_epsilon_large_tichu_into_real_rounds():
 
     call_rate = call_count / total
     assert 0.35 < call_rate < 0.65, (
-        f"epsilon_large_tichu=1.0 should force roughly half of large-Tichu decisions to 'call', "
+        f"epsilon_binary_call=1.0 should force roughly half of large-Tichu decisions to 'call', "
+        f"got call_rate={call_rate} over {total} decisions"
+    )
+
+
+def test_play_self_play_round_threads_epsilon_binary_call_into_the_tichu_call_decision_too():
+    # _is_binary_call_decision can't tell the large-Tichu and (small) Tichu
+    # decisions apart, so epsilon_binary_call forcing applies to both without
+    # any extra wiring -- this pins down that the second (small) Tichu
+    # decision that now shows up later in each trajectory also gets forced.
+    network = _small_network()
+    expected_call_vector = encode_tichu_action(True)
+    call_count = 0
+    total = 0
+    for seed in range(200):
+        trajectories = play_self_play_round(network, rng=random.Random(seed), epsilon_binary_call=1.0)
+        for trajectory in trajectories:
+            for transition in trajectory:
+                if transition.action_vectors.shape[0] != 2:
+                    continue
+                if not np.array_equal(transition.action_vectors[0], expected_call_vector):
+                    continue  # this 2-candidate decision is the large-Tichu one, not the tichu-call one
+                total += 1
+                if transition.chosen_index == 0:
+                    call_count += 1
+
+    assert total > 0, "expected at least one (small) Tichu call decision to show up across 200 rounds"
+    call_rate = call_count / total
+    assert 0.35 < call_rate < 0.65, (
+        f"epsilon_binary_call=1.0 should force roughly half of tichu-call decisions to 'call', "
         f"got call_rate={call_rate} over {total} decisions"
     )

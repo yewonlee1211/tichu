@@ -6,7 +6,7 @@ import numpy as np
 
 from tichu_env.cards import NUMERIC_RANKS, Card, Rank
 from tichu_env.combinations import BOMB_TYPES, Combo, ComboType
-from tichu_env.state import NUM_PLAYERS, PARTNER, GameState
+from tichu_env.state import NUM_PLAYERS, PARTNER, GameState, Phase
 
 LegalAction = tuple[Combo | None, np.ndarray]
 
@@ -36,10 +36,13 @@ class AdvancedHeuristicAgent:
     """
 
     _LARGE_TICHU_MIN_ACES = 2  # among the 8 dealt cards
+    _TICHU_MIN_ACES = 2  # among the full 14-card hand, plus a Dragon or Phoenix (see `_should_call_tichu`)
 
     def choose_action(self, state: GameState, legal_actions: list[LegalAction]) -> Combo | bool | None:
         if any(isinstance(action, bool) for action, _ in legal_actions):
-            return self._should_call_large_tichu(state.hands[state.current_player])
+            if state.phase is Phase.LARGE_TICHU:
+                return self._should_call_large_tichu(state.hands[state.current_player])
+            return self._should_call_tichu(state.hands[state.current_player])
 
         is_leading = state.current_best is None
         can_pass = any(combo is None for combo, _ in legal_actions)
@@ -82,6 +85,16 @@ class AdvancedHeuristicAgent:
         call rate that actually varies with hand quality."""
         aces = sum(1 for card in hand if card.rank is Rank.ACE)
         return aces >= self._LARGE_TICHU_MIN_ACES
+
+    def _should_call_tichu(self, hand: tuple[Card, ...]) -> bool:
+        """Hand-strength gate for the (small) Tichu call: at least
+        `_TICHU_MIN_ACES` Aces among the full 14-card hand *and* a Dragon or
+        Phoenix -- a slightly stricter bar than `_should_call_large_tichu`
+        since this decision is made later, with more information (and a
+        higher bonus/penalty at stake alongside the large-Tichu one)."""
+        aces = sum(1 for card in hand if card.rank is Rank.ACE)
+        has_dragon_or_phoenix = any(card.rank in (Rank.DRAGON, Rank.PHOENIX) for card in hand)
+        return aces >= self._TICHU_MIN_ACES and has_dragon_or_phoenix
 
     def _partner_holds_the_trick(self, state: GameState) -> bool:
         winner = state.last_player_to_act

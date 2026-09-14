@@ -2,7 +2,7 @@ import random
 
 from tichu_env.cards import Card, Rank, Suit
 from tichu_env.combinations import identify_combo
-from tichu_env.encoding import encode_action, encode_large_tichu_action
+from tichu_env.encoding import encode_action, encode_large_tichu_action, encode_tichu_action
 from tichu_env.env import TichuEnv
 from tichu_env.state import NUM_PLAYERS, GameState, Phase
 
@@ -128,6 +128,75 @@ def test_advanced_heuristic_declines_large_tichu_with_only_one_ace_despite_other
     chosen = agent.choose_action(state, _LARGE_TICHU_LEGAL_ACTIONS)
 
     assert chosen is False
+
+
+# ---------------------------------------------------------------------------
+# (Small) Tichu call decision
+# ---------------------------------------------------------------------------
+
+_TICHU_LEGAL_ACTIONS = [(True, encode_tichu_action(True)), (False, encode_tichu_action(False))]
+
+
+def _pad_to_14(cards: list[Card]) -> list[Card]:
+    """Fills out a hand to exactly 14 cards with plain filler numeric cards,
+    none of which are Aces, so tests can isolate the ace count that matters."""
+    filler_ranks = [Rank.SIX, Rank.SEVEN, Rank.EIGHT, Rank.NINE, Rank.TEN, Rank.JACK]
+    filler_suits = [Suit.SWORD, Suit.PAGODA, Suit.JADE, Suit.STAR]
+    filler = [card(rank, suit) for rank in filler_ranks for suit in filler_suits]
+    return (cards + filler)[:14]
+
+
+def test_advanced_heuristic_calls_tichu_with_two_aces_and_the_dragon():
+    hand = _pad_to_14([card(Rank.ACE, Suit.SWORD), card(Rank.ACE, Suit.PAGODA), special(Rank.DRAGON)])
+    state = make_playing_state(hands={0: hand}, current_player=0)
+    agent = AdvancedHeuristicAgent()
+
+    chosen = agent.choose_action(state, _TICHU_LEGAL_ACTIONS)
+
+    assert chosen is True
+
+
+def test_advanced_heuristic_calls_tichu_with_two_aces_and_the_phoenix():
+    hand = _pad_to_14([card(Rank.ACE, Suit.SWORD), card(Rank.ACE, Suit.PAGODA), special(Rank.PHOENIX)])
+    state = make_playing_state(hands={0: hand}, current_player=0)
+    agent = AdvancedHeuristicAgent()
+
+    chosen = agent.choose_action(state, _TICHU_LEGAL_ACTIONS)
+
+    assert chosen is True
+
+
+def test_advanced_heuristic_declines_tichu_with_two_aces_but_no_special_card():
+    hand = _pad_to_14([card(Rank.ACE, Suit.SWORD), card(Rank.ACE, Suit.PAGODA)])
+    state = make_playing_state(hands={0: hand}, current_player=0)
+    agent = AdvancedHeuristicAgent()
+
+    chosen = agent.choose_action(state, _TICHU_LEGAL_ACTIONS)
+
+    assert chosen is False
+
+
+def test_advanced_heuristic_declines_tichu_with_only_one_ace_despite_the_dragon():
+    hand = _pad_to_14([card(Rank.ACE, Suit.SWORD), special(Rank.DRAGON)])
+    state = make_playing_state(hands={0: hand}, current_player=0)
+    agent = AdvancedHeuristicAgent()
+
+    chosen = agent.choose_action(state, _TICHU_LEGAL_ACTIONS)
+
+    assert chosen is False
+
+
+def test_advanced_heuristic_tichu_call_uses_its_own_rule_not_the_large_tichu_rule():
+    # 2 aces and no Dragon/Phoenix: enough to call large Tichu (its rule is
+    # just aces >= 2) but not enough for the (small) Tichu decision, which
+    # additionally requires a Dragon or Phoenix -- this pins down that
+    # `choose_action` actually dispatches to `_should_call_tichu` here rather
+    # than accidentally reusing `_should_call_large_tichu`.
+    hand = _pad_to_14([card(Rank.ACE, Suit.SWORD), card(Rank.ACE, Suit.PAGODA)])
+    state = make_playing_state(hands={0: hand}, current_player=0)
+    agent = AdvancedHeuristicAgent()
+
+    assert agent.choose_action(state, _TICHU_LEGAL_ACTIONS) is False
 
 
 # ---------------------------------------------------------------------------

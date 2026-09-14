@@ -86,6 +86,74 @@ def test_step_raises_on_action_outside_legal_set():
             raise AssertionError("expected step() to reject a card the current player does not hold")
 
 
+def _decline_large_tichu_for_everyone(env: TichuEnv):
+    result = env.reset()
+    for _ in range(4):
+        decline = next(action for action, _ in result.legal_actions if action is False)
+        result = env.step(decline)
+    return result
+
+
+def test_legal_actions_offer_tichu_call_and_decline_at_a_players_first_turn():
+    env = TichuEnv(rng=random.Random(1))
+    result = _decline_large_tichu_for_everyone(env)
+
+    assert result.state.phase is Phase.PLAYING
+    assert {action for action, _ in result.legal_actions} == {True, False}
+
+
+def test_declining_tichu_then_proceeds_to_ordinary_trick_play_actions():
+    env = TichuEnv(rng=random.Random(1))
+    result = _decline_large_tichu_for_everyone(env)
+    decliner = result.state.current_player
+
+    result = env.step(False)
+
+    assert result.state.current_player == decliner, "the decision doesn't consume their real turn"
+    assert result.state.tichu_decided[decliner] is True
+    assert result.state.tichu_calls[decliner] is False
+    assert all(not isinstance(action, bool) for action, _ in result.legal_actions)
+
+
+def test_calling_tichu_records_the_call_and_then_proceeds_to_trick_play():
+    env = TichuEnv(rng=random.Random(1))
+    result = _decline_large_tichu_for_everyone(env)
+    caller = result.state.current_player
+
+    result = env.step(True)
+
+    assert env.state.tichu_calls[caller] is True
+    assert all(not isinstance(action, bool) for action, _ in result.legal_actions)
+
+
+def test_tichu_decision_is_never_offered_again_once_decided():
+    env = TichuEnv(rng=random.Random(1))
+    result = _decline_large_tichu_for_everyone(env)
+    first_player = result.state.current_player
+    result = env.step(False)
+
+    # Play the round out; whenever it's first_player's turn again, they must
+    # never see the bool tichu decision a second time.
+    rng = random.Random(99)
+    while not result.done:
+        if result.player == first_player:
+            assert all(not isinstance(action, bool) for action, _ in result.legal_actions)
+        combo, _ = rng.choice(result.legal_actions)
+        result = env.step(combo)
+
+
+def test_step_rejects_a_non_bool_action_during_the_tichu_decision():
+    env = TichuEnv(rng=random.Random(1))
+    _decline_large_tichu_for_everyone(env)
+
+    try:
+        env.step(None)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected step() to reject a non-bool action during the tichu call decision")
+
+
 def test_step_result_exposes_the_current_game_state():
     env = TichuEnv(rng=random.Random(4))
 

@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from tichu_env.cards import Card, Rank, Suit
+from tichu_env.cards import SPECIAL_RANKS, Card, Rank, Suit
 from tichu_env.combinations import ComboType, identify_combo
 from tichu_env.state import (
     NUM_PLAYERS,
@@ -11,7 +11,9 @@ from tichu_env.state import (
     call_tichu,
     deal_new_round,
     decide_large_tichu,
+    decide_tichu,
     exchange_cards,
+    is_awaiting_tichu_decision,
     legal_combos,
     pass_turn,
     play_combo,
@@ -174,6 +176,80 @@ def test_exchange_rejects_giving_the_same_card_twice():
 
     with pytest.raises(ValueError):
         exchange_cards(state, gifts)
+
+
+# ---------------------------------------------------------------------------
+# (Small) Tichu call decision
+# ---------------------------------------------------------------------------
+
+
+def _full_hand(seat_offset: int = 0) -> list[Card]:
+    """14 distinct cards, offset by seat so two players' hands in the same
+    test never collide -- only the count/identity matters for these tests,
+    not deck legality."""
+    ranks = list(Rank)[seat_offset : seat_offset + 14]
+    return [special(rank) if rank in SPECIAL_RANKS else card(rank) for rank in ranks]
+
+
+def test_is_awaiting_tichu_decision_true_only_while_undecided_with_a_full_hand():
+    state = make_playing_state({0: _full_hand()}, current_player=0)
+    assert is_awaiting_tichu_decision(state, 0) is True
+
+    decided = make_playing_state({0: _full_hand()}, current_player=0, tichu_decided=(True, False, False, False))
+    assert is_awaiting_tichu_decision(decided, 0) is False
+
+    played_a_card = make_playing_state({0: _full_hand()[:13]}, current_player=0)
+    assert is_awaiting_tichu_decision(played_a_card, 0) is False
+
+    not_playing_phase = make_playing_state({0: _full_hand()}, current_player=0, phase=Phase.EXCHANGE)
+    assert is_awaiting_tichu_decision(not_playing_phase, 0) is False
+
+
+def test_decide_tichu_sets_tichu_decided_and_tichu_calls_when_called():
+    state = make_playing_state({0: _full_hand()}, current_player=0)
+
+    result = decide_tichu(state, 0, called=True)
+
+    assert result.tichu_decided[0] is True
+    assert result.tichu_calls[0] is True
+
+
+def test_decide_tichu_sets_tichu_decided_but_not_tichu_calls_when_declined():
+    state = make_playing_state({0: _full_hand()}, current_player=0)
+
+    result = decide_tichu(state, 0, called=False)
+
+    assert result.tichu_decided[0] is True
+    assert result.tichu_calls[0] is False
+
+
+def test_cannot_decide_tichu_twice():
+    state = make_playing_state({0: _full_hand()}, current_player=0)
+    state = decide_tichu(state, 0, called=False)
+
+    with pytest.raises(ValueError):
+        decide_tichu(state, 0, called=True)
+
+
+def test_decide_tichu_rejects_a_decision_from_the_wrong_seat():
+    state = make_playing_state({0: _full_hand(), 1: _full_hand(1)}, current_player=0)
+
+    with pytest.raises(ValueError):
+        decide_tichu(state, 1, called=False)
+
+
+def test_decide_tichu_requires_a_full_14_card_hand():
+    state = make_playing_state({0: _full_hand()[:13]}, current_player=0)
+
+    with pytest.raises(ValueError):
+        decide_tichu(state, 0, called=True)
+
+
+def test_decide_tichu_rejected_outside_the_playing_phase():
+    state = make_playing_state({0: _full_hand()}, current_player=0, phase=Phase.EXCHANGE)
+
+    with pytest.raises(ValueError):
+        decide_tichu(state, 0, called=True)
 
 
 # ---------------------------------------------------------------------------
