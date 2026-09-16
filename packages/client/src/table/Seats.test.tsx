@@ -112,6 +112,86 @@ describe('Seats', () => {
     expect(mySeat).toHaveTextContent('1위 · 티츄');
   });
 
+  it('colors a seat red when it called Grand Tichu', () => {
+    render(
+      <Seats
+        seatNames={seatNames}
+        viewerSeat={0}
+        currentPlayer={0}
+        handSizes={[10, 11, 12, 13]}
+        tichuCalls={[false, false, false, false]}
+        largeTichuCalls={[null, true, false, false]}
+        finishedOrder={[]}
+        announcement={null}
+        lastPassSeat={null}
+      />,
+    );
+
+    const seat = screen.getByText('AI 1').closest('.seats__seat');
+    expect(seat).toHaveClass('seats__seat--grand-tichu');
+    expect(seat).not.toHaveClass('seats__seat--tichu');
+  });
+
+  it('colors a seat blue when it called (small) Tichu', () => {
+    render(
+      <Seats
+        seatNames={seatNames}
+        viewerSeat={0}
+        currentPlayer={0}
+        handSizes={[10, 11, 12, 13]}
+        tichuCalls={[false, true, false, false]}
+        largeTichuCalls={[null, false, false, false]}
+        finishedOrder={[]}
+        announcement={null}
+        lastPassSeat={null}
+      />,
+    );
+
+    const seat = screen.getByText('AI 1').closest('.seats__seat');
+    expect(seat).toHaveClass('seats__seat--tichu');
+    expect(seat).not.toHaveClass('seats__seat--grand-tichu');
+  });
+
+  it('keeps the red Grand Tichu color when both Grand Tichu and (small) Tichu calls apply to the same seat', () => {
+    render(
+      <Seats
+        seatNames={seatNames}
+        viewerSeat={0}
+        currentPlayer={0}
+        handSizes={[10, 11, 12, 13]}
+        tichuCalls={[false, true, false, false]}
+        largeTichuCalls={[null, true, false, false]}
+        finishedOrder={[]}
+        announcement={null}
+        lastPassSeat={null}
+      />,
+    );
+
+    const seat = screen.getByText('AI 1').closest('.seats__seat');
+    expect(seat).toHaveClass('seats__seat--grand-tichu');
+    expect(seat).not.toHaveClass('seats__seat--tichu');
+  });
+
+  it('applies neither call color when a seat has called neither Tichu', () => {
+    render(
+      <Seats
+        seatNames={seatNames}
+        viewerSeat={0}
+        currentPlayer={0}
+        handSizes={[10, 11, 12, 13]}
+        tichuCalls={[false, false, false, false]}
+        largeTichuCalls={[null, false, false, false]}
+        finishedOrder={[]}
+        announcement={null}
+        lastPassSeat={null}
+      />,
+    );
+
+    const seat = screen.getByText('AI 1').closest('.seats__seat');
+    expect(seat).not.toHaveClass('seats__seat--grand-tichu');
+    expect(seat).not.toHaveClass('seats__seat--tichu');
+  });
+
   it('omits the badge line entirely when a seat has no rank or Tichu call', () => {
     render(
       <Seats

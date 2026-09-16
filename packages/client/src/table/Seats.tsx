@@ -51,17 +51,24 @@ export function Seats({
         const isViewer = seat === viewerSeat;
         const isPartner = seat === partnerSeat;
         const relationLabel = isViewer ? '나' : isPartner ? '파트너' : '상대팀';
-        const tichuBadge = largeTichuCalls[seat] ? '그랜드 티츄' : tichuCalls[seat] ? '티츄' : null;
+        const largeTichuCalled = largeTichuCalls[seat] === true;
+        const tichuCalled = tichuCalls[seat];
+        const tichuBadge = largeTichuCalled ? '그랜드 티츄' : tichuCalled ? '티츄' : null;
         const finishRank = finishedOrder.indexOf(seat);
         const rankBadge = finishRank === -1 ? null : `${finishRank + 1}위`;
         const topBadges = [rankBadge, tichuBadge].filter((badge): badge is string => badge !== null);
+        // Grand Tichu wins when both apply (see this component's own priority
+        // in `tichuBadge` above -- a call can only ever be one or the other in
+        // practice, but the same "grand wins" tie-break keeps the background
+        // consistent with the badge text if that ever changes).
+        const callColorClass = largeTichuCalled ? ' seats__seat--grand-tichu' : tichuCalled ? ' seats__seat--tichu' : '';
 
         return (
           <div
             key={seat}
             className={`seats__seat seats__seat--${position}${seat === currentPlayer ? ' seats__seat--active' : ''}${
               isPartner ? ' seats__seat--partner' : ''
-            }`}
+            }${callColorClass}`}
           >
             {topBadges.length > 0 && <span className="seats__badges">{topBadges.join(' · ')}</span>}
             <span className="seats__name">{name}</span>
