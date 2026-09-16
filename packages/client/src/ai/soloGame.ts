@@ -105,19 +105,52 @@ function autoDragonRecipient(state: GameState, winner: number): number {
   throw new Error('no valid Dragon recipient available');
 }
 
-/** Mirrors `ai/tichu_env/env.py`'s `_auto_exchange` for a single giver:
- * hand sorted by rank ascending, lowest 3 cards given one each to the other
- * three seats in seat order. This is the same non-strategic default the model
- * was trained against for every seat's exchange during self-play, so AI seats
- * must keep using it rather than something "smarter" the model never saw. */
+/** Mirrors `ai/tichu_env/env.py`'s `_auto_exchange` for a single giver: the
+ * partner gets the giver's best card (or, if the giver called Large Tichu, a
+ * low card instead -- keeping their strength for themselves), the two
+ * opponents get the giver's two lowest cards. The Mahjong is never given away
+ * (its holder becomes the trick leader). The Dog defaults to being treated as
+ * the giver's lowest card (goes to an opponent), unless the giver called
+ * Large Tichu (goes to the partner instead) or the partner did (the giver
+ * keeps it, since playing the Dog later hands the partner the lead). This is
+ * the same non-strategic default the model was trained against for every
+ * seat's exchange during self-play, so AI seats must keep using it rather
+ * than something "smarter" the model never saw. */
 function autoExchangeGifts(state: GameState, giver: number): Record<number, Card> {
-  const hand = [...state.hands[giver]!].sort((a, b) => a.rank - b.rank);
-  const others = [0, 1, 2, 3].filter((p) => p !== giver);
-  const gift: Record<number, Card> = {};
-  others.forEach((recipient, i) => {
-    gift[recipient] = hand[i]!;
-  });
-  return gift;
+  const partner = PARTNER[giver]!;
+  const opponents = [0, 1, 2, 3].filter((p) => p !== giver && p !== partner);
+  const giverCalled = state.largeTichuCalls[giver] === true;
+  const partnerCalled = state.largeTichuCalls[partner] === true;
+
+  let pool = state.hands[giver]!.filter((c) => c.rank !== Rank.Mahjong);
+  const dog = pool.find((c) => c.rank === Rank.Dog) ?? null;
+
+  let partnerCard: Card | null = null;
+  if (dog !== null && giverCalled) {
+    partnerCard = dog;
+    pool = pool.filter((c) => c !== dog);
+  } else if (dog !== null && partnerCalled) {
+    pool = pool.filter((c) => c !== dog);
+  }
+
+  if (partnerCard === null) {
+    if (giverCalled) {
+      partnerCard = pool.reduce((min, c) => (c.rank < min.rank ? c : min));
+    } else {
+      const phoenix = pool.find((c) => c.rank === Rank.Phoenix) ?? null;
+      const dragon = pool.find((c) => c.rank === Rank.Dragon) ?? null;
+      partnerCard = phoenix ?? dragon ?? pool.reduce((max, c) => (c.rank > max.rank ? c : max));
+    }
+    pool = pool.filter((c) => c !== partnerCard);
+  }
+
+  const opponentCards = [...pool].sort((a, b) => a.rank - b.rank).slice(0, 2);
+
+  return {
+    [opponents[0]!]: opponentCards[0]!,
+    [opponents[1]!]: opponentCards[1]!,
+    [partner]: partnerCard,
+  };
 }
 
 /**

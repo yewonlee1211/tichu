@@ -428,6 +428,153 @@ describe('SoloGame: Large Tichu and exchange', () => {
   });
 });
 
+describe("SoloGame: AI auto-exchange mirrors ai/tichu_env/env.py's _auto_exchange heuristic", () => {
+  // Bug: this used to be "sort hand ascending, give the 3 lowest cards to the
+  // other 3 seats in seat order" -- an old, simpler rule that predates the
+  // Python engine's actual heuristic (partner gets the giver's best card,
+  // opponents get the two lowest, with Large Tichu/Dog special-casing --
+  // ai/tichu_env/env.py's `_auto_exchange`). The deployed model was trained
+  // against the *real* Python heuristic, so a client that auto-exchanges
+  // differently than what the model actually saw during self-play produces
+  // exchanges the model never learned to play around.
+  //
+  // Builds a full, valid 4-hand deal (56 unique cards, no collisions) where
+  // `giverSeat`'s hand is exactly `giverCards` (padded to 14 with arbitrary
+  // filler from the rest of the deck) and the other three seats split
+  // whatever's left. Jumps straight to Phase.Exchange via resumeFrom, the
+  // same pattern the "can resume mid-Exchange" test above uses, so neither
+  // Large Tichu nor the normal deal/8-then-6-card split has to be replayed.
+  function buildExchangeState(
+    giverSeat: number,
+    giverCards: readonly Card[],
+    largeTichuCalls: readonly (boolean | null)[] = [false, false, false, false],
+  ): GameState {
+    const isSameCard = (a: Card, b: Card) => a.rank === b.rank && a.suit === b.suit;
+    const rest = createDeck().filter((c) => !giverCards.some((g) => isSameCard(g, c)));
+    const fillerCount = 14 - giverCards.length;
+    const giverHand = [...giverCards, ...rest.slice(0, fillerCount)];
+    const leftover = rest.slice(fillerCount);
+
+    const hands: Card[][] = [[], [], [], []];
+    hands[giverSeat] = giverHand;
+    [0, 1, 2, 3]
+      .filter((seat) => seat !== giverSeat)
+      .forEach((seat, i) => {
+        hands[seat] = leftover.slice(i * 14, i * 14 + 14);
+      });
+
+    const dealt = dealNewRound(createDeck());
+    return { ...dealt, hands, phase: Phase.Exchange, largeTichuCalls };
+  }
+
+  /** Submits a throwaway-but-valid human exchange -- the human's own gifts
+   * don't matter for these tests, only what the AI giver under test sends
+   * back (captured via each test's own `onExchangeReceived` callback). */
+  async function submitThrowawayHumanExchange(game: SoloGame): Promise<void> {
+    const hand = game.getState().hands[HUMAN_SEAT]!;
+    const sorted = [...hand].sort((a, b) => a.rank - b.rank);
+    const result = await game.submitHumanExchange({ 1: sorted[0]!, 2: sorted[1]!, 3: sorted[2]! });
+    expect(result.ok).toBe(true);
+  }
+
+  it("gives the partner the giver's best card (Phoenix preferred) when the giver didn't call Large Tichu -- not a low card", async () => {
+    // Seat 2's partner is the human (PARTNER[2] === 0), so the human directly
+    // observes what seat 2 sends its partner. Under the old (buggy) "lowest 3
+    // cards to the other 3 seats in order" rule, the human (first in seat
+    // order among seat 2's other players) would have received seat 2's
+    // *lowest* card instead.
+    const pagodaRanks: Card[] = [
+      Rank.Two, Rank.Three, Rank.Four, Rank.Five, Rank.Six, Rank.Seven,
+      Rank.Eight, Rank.Nine, Rank.Ten, Rank.Jack, Rank.Queen,
+    ].map((rank) => ({ rank, suit: Suit.Pagoda }));
+    const giverCards: Card[] = [{ rank: Rank.Phoenix, suit: Suit.Special }, { rank: Rank.Ace, suit: Suit.Sword }, ...pagodaRanks];
+
+    let received: Record<number, Card> | null = null;
+    const game = new SoloGame({
+      session: stubSession(),
+      onExchangeReceived: (r) => (received = r),
+      resumeFrom: { state: buildExchangeState(2, giverCards), cumulativeScores: [0, 0] },
+    });
+    await submitThrowawayHumanExchange(game);
+
+    expect(received).not.toBeNull();
+    expect(received![2]!.rank).toBe(Rank.Phoenix);
+  });
+
+  it('gives the partner a low card instead when the giver DID call Large Tichu -- keeping their own strength', async () => {
+    const pagodaRanks: Card[] = [
+      Rank.Three, Rank.Four, Rank.Five, Rank.Six, Rank.Seven, Rank.Eight,
+      Rank.Nine, Rank.Ten, Rank.Jack, Rank.Queen, Rank.King,
+    ].map((rank) => ({ rank, suit: Suit.Pagoda }));
+    const giverCards: Card[] = [
+      { rank: Rank.Phoenix, suit: Suit.Special },
+      { rank: Rank.Two, suit: Suit.Pagoda },
+      ...pagodaRanks,
+    ];
+
+    let received: Record<number, Card> | null = null;
+    const game = new SoloGame({
+      session: stubSession(),
+      onExchangeReceived: (r) => (received = r),
+      resumeFrom: { state: buildExchangeState(2, giverCards, [false, false, true, false]), cumulativeScores: [0, 0] },
+    });
+    await submitThrowawayHumanExchange(game);
+
+    expect(received).not.toBeNull();
+    expect(received![2]!.rank).toBe(Rank.Two);
+    expect(received![2]!.rank).not.toBe(Rank.Phoenix);
+  });
+
+  it('keeps the Dog with the giver (gives it to nobody) when the PARTNER called Large Tichu, instead of handing it to an opponent', async () => {
+    // Seat 1's partner is seat 3 (PARTNER[1] === 3); the human is one of seat
+    // 1's two opponents. Under the old (buggy) rule the Dog -- rank 0, always
+    // the globally lowest card -- would have been the very first of the "3
+    // lowest cards" and gone straight to the human. The correct rule instead
+    // has seat 1 keep it (since seat 1's partner will lead with it later).
+    const pagodaRanks: Card[] = [
+      Rank.Two, Rank.Three, Rank.Four, Rank.Five, Rank.Six, Rank.Seven,
+      Rank.Eight, Rank.Nine, Rank.Ten, Rank.Jack, Rank.Queen,
+    ].map((rank) => ({ rank, suit: Suit.Pagoda }));
+    const giverCards: Card[] = [
+      { rank: Rank.Dog, suit: Suit.Special },
+      { rank: Rank.Ace, suit: Suit.Sword },
+      { rank: Rank.King, suit: Suit.Sword },
+      ...pagodaRanks,
+    ];
+
+    let received: Record<number, Card> | null = null;
+    const game = new SoloGame({
+      session: stubSession(),
+      onExchangeReceived: (r) => (received = r),
+      resumeFrom: { state: buildExchangeState(1, giverCards, [false, false, false, true]), cumulativeScores: [0, 0] },
+    });
+    await submitThrowawayHumanExchange(game);
+
+    expect(received).not.toBeNull();
+    expect(received![1]!.rank).toBe(Rank.Two);
+    expect(received![1]!.rank).not.toBe(Rank.Dog);
+  });
+
+  it('gives the Dog straight to the partner when the giver called Large Tichu', async () => {
+    const pagodaRanks: Card[] = [
+      Rank.Three, Rank.Four, Rank.Five, Rank.Six, Rank.Seven, Rank.Eight,
+      Rank.Nine, Rank.Ten, Rank.Jack, Rank.Queen, Rank.King,
+    ].map((rank) => ({ rank, suit: Suit.Pagoda }));
+    const giverCards: Card[] = [{ rank: Rank.Dog, suit: Suit.Special }, ...pagodaRanks, { rank: Rank.Ace, suit: Suit.Sword }, { rank: Rank.Ace, suit: Suit.Pagoda }];
+
+    let received: Record<number, Card> | null = null;
+    const game = new SoloGame({
+      session: stubSession(),
+      onExchangeReceived: (r) => (received = r),
+      resumeFrom: { state: buildExchangeState(2, giverCards, [false, false, true, false]), cumulativeScores: [0, 0] },
+    });
+    await submitThrowawayHumanExchange(game);
+
+    expect(received).not.toBeNull();
+    expect(received![2]!.rank).toBe(Rank.Dog);
+  });
+});
+
 describe('SoloGame: AI turn pacing', () => {
   // A random deal would sometimes hand the human the Mahjong and let them
   // lead first, needing zero AI turns before returning control -- which
@@ -587,8 +734,12 @@ describe('SoloGame: full round', () => {
 
     await playRoundToCompletion(game);
 
+    // Not asserting scores[0] + scores[1] > 0 here: a team's total can
+    // legitimately net to exactly 0 (e.g. a failed (small) Tichu call's -100
+    // penalty exactly cancelling that team's card points), so it isn't a real
+    // invariant -- an unscored round (still [0, 0] initial state) is instead
+    // distinguished below by roundHistory staying empty rather than [scores].
     const scores = game.getCumulativeScores();
-    expect(scores[0] + scores[1]).toBeGreaterThan(0);
     expect(game.getRoundHistory()).toEqual([scores]);
   });
 
