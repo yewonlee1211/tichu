@@ -133,6 +133,23 @@ label {
   margin-top: 1rem;
 }
 
+.home__announcement {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-felt-light);
+  text-align: left;
+}
+
+.home__announcement h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.home__announcement p {
+  margin: 0;
+  color: var(--color-ink-dim);
+}
+
 .game-table,
 .multiplayer-page,
 .solo-game-page {

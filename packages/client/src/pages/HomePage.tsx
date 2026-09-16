@@ -1,3 +1,5 @@
+import { announcement } from '../content/announcement';
+
 export interface HomePageProps {
   readonly onPlayMultiplayer: () => void;
   readonly onPlaySolo: () => void;
@@ -16,6 +18,10 @@ export function HomePage({ onPlaySolo }: HomePageProps) {
           AI와 연습하기
         </button>
       </div>
+      <section className="home__announcement" aria-label="공지사항">
+        <h2>{announcement.title}</h2>
+        <p>{announcement.body}</p>
+      </section>
     </section>
   );
 }
