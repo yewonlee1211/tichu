@@ -21,6 +21,9 @@ export function HomePage({ onPlaySolo }: HomePageProps) {
       <section className="home__announcement" aria-label="공지사항">
         <h2>{announcement.title}</h2>
         <p>{announcement.body}</p>
+        <a href="https://open.kakao.com/o/s88yQSNi" target="_blank" rel="noopener noreferrer">
+          문의하기
+        </a>
       </section>
     </section>
   );
