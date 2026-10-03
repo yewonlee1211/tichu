@@ -2,7 +2,7 @@ import random
 
 from tichu_env.cards import Card, Rank, Suit
 from tichu_env.combinations import identify_combo
-from tichu_env.encoding import encode_action, encode_large_tichu_action
+from tichu_env.encoding import encode_action
 from tichu_env.env import TichuEnv
 
 from agents.heuristic import HeuristicAgent
@@ -94,15 +94,6 @@ def test_heuristic_prefers_non_bomb_over_bomb_even_when_pass_is_unavailable():
     chosen = agent.choose_action(legal_actions)
 
     assert chosen == single
-
-
-def test_heuristic_always_declines_large_tichu():
-    legal_actions = [(True, encode_large_tichu_action(True)), (False, encode_large_tichu_action(False))]
-    agent = HeuristicAgent()
-
-    chosen = agent.choose_action(legal_actions)
-
-    assert chosen is False
 
 
 # ---------------------------------------------------------------------------

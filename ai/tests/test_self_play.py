@@ -7,48 +7,15 @@ from tichu_env.scoring import TEAM_OF
 
 from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
-from tichu_env.cards import Card, Rank, Suit
-from tichu_env.encoding import encode_large_tichu_action, encode_legal_actions, encode_tichu_action
-from tichu_env.state import NUM_PLAYERS as _NUM_PLAYERS
-from tichu_env.state import GameState, Phase
 
 from training.self_play import (
-    HybridOpponent,
     PolicyOpponent,
     Transition,
-    _sample_action_index,
     _split_game_counts,
     generate_self_play_games,
     generate_self_play_games_parallel,
     play_self_play_round,
 )
-
-
-def _card(rank: Rank, suit: Suit = Suit.SWORD) -> Card:
-    return Card(rank=rank, suit=suit)
-
-
-def _make_playing_state(hands: dict[int, list[Card]], **overrides) -> GameState:
-    base = dict(
-        hands=tuple(tuple(hands.get(i, [])) for i in range(_NUM_PLAYERS)),
-        pending_final_cards=tuple(() for _ in range(_NUM_PLAYERS)),
-        phase=Phase.PLAYING,
-        current_player=0,
-        trick_leader=0,
-        trick_cards=(),
-        current_best=None,
-        current_strength=0.0,
-        last_player_to_act=None,
-        passes_in_a_row=0,
-        finished_order=(),
-        collected_tricks=tuple(() for _ in range(_NUM_PLAYERS)),
-        large_tichu_calls=(True, True, True, True),
-        tichu_calls=(False, False, False, False),
-        tichu_decided=(True, True, True, True),
-        mahjong_wish=None,
-    )
-    base.update(overrides)
-    return GameState(**base)
 
 
 def _small_network() -> TichuPolicyValueNet:
@@ -145,65 +112,6 @@ def test_policy_opponent_plays_a_frozen_network_as_a_valid_self_play_opponent():
             assert trajectories[player] == [], "team1 seats played by PolicyOpponent record nothing"
 
 
-def test_hybrid_opponent_uses_the_advanced_heuristic_rule_for_large_tichu():
-    network = _small_network()
-    strong_hand = [_card(Rank.ACE, Suit.SWORD), _card(Rank.ACE, Suit.PAGODA), _card(Rank.TWO)]
-    weak_hand = [_card(Rank.TWO), _card(Rank.THREE), _card(Rank.FOUR)]
-    legal_actions = [(True, encode_large_tichu_action(True)), (False, encode_large_tichu_action(False))]
-    opponent = HybridOpponent(network, random.Random(1))
-
-    strong_state = _make_playing_state({0: strong_hand}, phase=Phase.LARGE_TICHU, current_player=0)
-    weak_state = _make_playing_state({0: weak_hand}, phase=Phase.LARGE_TICHU, current_player=0)
-
-    assert opponent.choose_action(strong_state, legal_actions) is True
-    assert opponent.choose_action(weak_state, legal_actions) is False
-
-
-def test_hybrid_opponent_uses_the_advanced_heuristic_rule_for_the_tichu_call():
-    network = _small_network()
-    filler = [_card(rank, suit) for rank in (Rank.SIX, Rank.SEVEN, Rank.EIGHT, Rank.NINE) for suit in Suit]
-    strong_hand = ([_card(Rank.ACE, Suit.SWORD), _card(Rank.ACE, Suit.PAGODA), _card(Rank.DRAGON, Suit.SPECIAL)] + filler)[
-        :14
-    ]
-    weak_hand = ([_card(Rank.ACE, Suit.SWORD)] + filler)[:14]
-    legal_actions = [(True, encode_tichu_action(True)), (False, encode_tichu_action(False))]
-    opponent = HybridOpponent(network, random.Random(2))
-
-    strong_state = _make_playing_state({0: strong_hand}, current_player=0, tichu_decided=(False, True, True, True))
-    weak_state = _make_playing_state({0: weak_hand}, current_player=0, tichu_decided=(False, True, True, True))
-
-    assert opponent.choose_action(strong_state, legal_actions) is True
-    assert opponent.choose_action(weak_state, legal_actions) is False
-
-
-def test_hybrid_opponent_defers_trick_play_to_the_wrapped_network_like_policy_opponent():
-    # Directly compare HybridOpponent's trick-play choice against PolicyOpponent's,
-    # from identically-seeded RNGs -- they must sample identically since both
-    # delegate to the very same mechanism for non-bool decisions.
-    network = _small_network()
-    state = _make_playing_state({0: [_card(Rank.FIVE), _card(Rank.SEVEN)]}, current_player=0, trick_leader=0)
-    legal_actions = encode_legal_actions(state, 0)
-
-    hybrid_choice = HybridOpponent(network, random.Random(42)).choose_action(state, legal_actions)
-    policy_choice = PolicyOpponent(network, random.Random(42)).choose_action(state, legal_actions)
-
-    assert hybrid_choice == policy_choice
-
-
-def test_hybrid_opponent_plays_as_a_valid_self_play_opponent():
-    network = _small_network()
-    frozen = _small_network()
-    trajectories = play_self_play_round(
-        network, rng=random.Random(30), opponent=HybridOpponent(frozen, random.Random(31))
-    )
-
-    for player in range(4):
-        if TEAM_OF[player] == TEAM_OF[0]:
-            assert trajectories[player], "team0 (the trainable network) should still record its own turns"
-        else:
-            assert trajectories[player] == [], "team1 seats played by HybridOpponent record nothing"
-
-
 def test_generate_self_play_games_calls_the_opponent_factory_once_per_game():
     network = _small_network()
     calls = []
@@ -257,67 +165,6 @@ def test_transition_is_immutable():
         assert False, "Transition should be frozen"
     except AttributeError:
         pass
-
-
-def test_sample_action_index_ignores_epsilon_for_non_binary_call_decisions():
-    # A trick-play decision offers Combo/None candidates, never plain bools --
-    # epsilon-greedy forcing must never touch these, even at epsilon=1.0.
-    combos = [None, "combo-stand-in"]
-    probs = np.array([0.95, 0.05])
-
-    chosen = [
-        _sample_action_index(combos, probs, random.Random(seed), epsilon_binary_call=1.0) for seed in range(200)
-    ]
-
-    index0_rate = sum(1 for index in chosen if index == 0) / len(chosen)
-    assert index0_rate > 0.8, (
-        f"non-binary-call decisions must stay policy-weighted even at epsilon=1.0, got index0_rate={index0_rate}"
-    )
-
-
-def test_sample_action_index_never_forces_random_when_epsilon_is_zero():
-    combos = [True, False]
-    probs = np.array([0.0, 1.0])  # policy always prefers declining (index 1)
-
-    for seed in range(20):
-        index = _sample_action_index(combos, probs, random.Random(seed), epsilon_binary_call=0.0)
-        assert index == 1
-
-
-def test_sample_action_index_always_forces_uniform_choice_when_epsilon_is_one():
-    combos = [True, False]
-    probs = np.array([0.0, 1.0])  # policy would otherwise always decline
-
-    chosen = [
-        _sample_action_index(combos, probs, random.Random(seed), epsilon_binary_call=1.0) for seed in range(200)
-    ]
-
-    call_rate = sum(1 for index in chosen if index == 0) / len(chosen)
-    assert 0.35 < call_rate < 0.65, f"epsilon=1.0 should force a roughly uniform choice, got call_rate={call_rate}"
-
-
-def test_play_self_play_round_threads_epsilon_binary_call_into_the_large_tichu_decision():
-    network = _small_network()
-    call_count = 0
-    total = 0
-    for seed in range(100):
-        trajectories = play_self_play_round(network, rng=random.Random(seed), epsilon_binary_call=1.0)
-        for trajectory in trajectories:
-            if not trajectory:
-                continue
-            # Each player's first-ever decision in a round is the large-Tichu
-            # call/decline choice (Phase.LARGE_TICHU precedes everything else).
-            first_transition = trajectory[0]
-            assert first_transition.action_vectors.shape[0] == 2
-            total += 1
-            if first_transition.chosen_index == 0:
-                call_count += 1
-
-    call_rate = call_count / total
-    assert 0.35 < call_rate < 0.65, (
-        f"epsilon_binary_call=1.0 should force roughly half of large-Tichu decisions to 'call', "
-        f"got call_rate={call_rate} over {total} decisions"
-    )
 
 
 def test_split_game_counts_evenly_divides_when_there_is_no_remainder():
@@ -392,30 +239,3 @@ def test_generate_self_play_games_parallel_propagates_worker_exceptions():
         )
 
 
-def test_play_self_play_round_threads_epsilon_binary_call_into_the_tichu_call_decision_too():
-    # _is_binary_call_decision can't tell the large-Tichu and (small) Tichu
-    # decisions apart, so epsilon_binary_call forcing applies to both without
-    # any extra wiring -- this pins down that the second (small) Tichu
-    # decision that now shows up later in each trajectory also gets forced.
-    network = _small_network()
-    expected_call_vector = encode_tichu_action(True)
-    call_count = 0
-    total = 0
-    for seed in range(200):
-        trajectories = play_self_play_round(network, rng=random.Random(seed), epsilon_binary_call=1.0)
-        for trajectory in trajectories:
-            for transition in trajectory:
-                if transition.action_vectors.shape[0] != 2:
-                    continue
-                if not np.array_equal(transition.action_vectors[0], expected_call_vector):
-                    continue  # this 2-candidate decision is the large-Tichu one, not the tichu-call one
-                total += 1
-                if transition.chosen_index == 0:
-                    call_count += 1
-
-    assert total > 0, "expected at least one (small) Tichu call decision to show up across 200 rounds"
-    call_rate = call_count / total
-    assert 0.35 < call_rate < 0.65, (
-        f"epsilon_binary_call=1.0 should force roughly half of tichu-call decisions to 'call', "
-        f"got call_rate={call_rate} over {total} decisions"
-    )

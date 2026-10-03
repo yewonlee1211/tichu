@@ -6,7 +6,7 @@ import numpy as np
 
 from tichu_env.cards import NUMERIC_RANKS, Card, Rank
 from tichu_env.combinations import BOMB_TYPES, Combo, ComboType
-from tichu_env.state import NUM_PLAYERS, PARTNER, GameState, Phase
+from tichu_env.state import NUM_PLAYERS, PARTNER, GameState
 
 LegalAction = tuple[Combo | None, np.ndarray]
 
@@ -36,14 +36,14 @@ class AdvancedHeuristicAgent:
     """
 
     _LARGE_TICHU_MIN_ACES = 2  # among the 8 dealt cards
-    _TICHU_MIN_ACES = 2  # among the full 14-card hand, plus a Dragon or Phoenix (see `_should_call_tichu`)
+    _TICHU_MIN_ACES = 2  # among the full 14-card hand, plus a Dragon or Phoenix (see `should_call_tichu`)
 
-    def choose_action(self, state: GameState, legal_actions: list[LegalAction]) -> Combo | bool | None:
-        if any(isinstance(action, bool) for action, _ in legal_actions):
-            if state.phase is Phase.LARGE_TICHU:
-                return self._should_call_large_tichu(state.hands[state.current_player])
-            return self._should_call_tichu(state.hands[state.current_player])
-
+    def choose_action(self, state: GameState, legal_actions: list[LegalAction]) -> Combo | None:
+        """Trick-play only -- the large-Tichu and (small) Tichu call
+        decisions are no longer offered as `legal_actions` entries by
+        `TichuEnv` (see its class docstring); `should_call_large_tichu`/
+        `should_call_tichu` below are called directly by `TichuEnv` instead
+        for those."""
         is_leading = state.current_best is None
         can_pass = any(combo is None for combo, _ in legal_actions)
 
@@ -77,21 +77,29 @@ class AdvancedHeuristicAgent:
         bombs = [combo for combo, _ in legal_actions if combo is not None]
         return min(bombs, key=lambda combo: combo.rank_strength)
 
-    def _should_call_large_tichu(self, hand: tuple[Card, ...]) -> bool:
+    def should_call_large_tichu(self, hand: tuple[Card, ...]) -> bool:
         """Simple hand-strength gate: call with at least
         `_LARGE_TICHU_MIN_ACES` Aces among the 8 cards dealt before the
         large-Tichu decision. This agent is a fixed opponent baseline, not
         the thing being trained -- it only needs a plausible, non-degenerate
-        call rate that actually varies with hand quality."""
+        call rate that actually varies with hand quality.
+
+        Public (not `_`-prefixed) because `tichu_env.env.TichuEnv` also calls
+        this directly to auto-resolve the large-Tichu decision -- it is no
+        longer an RL-trainable action (see the env's class docstring and
+        .claude/plans/tichu-m2-action-space-curriculum.plan.md)."""
         aces = sum(1 for card in hand if card.rank is Rank.ACE)
         return aces >= self._LARGE_TICHU_MIN_ACES
 
-    def _should_call_tichu(self, hand: tuple[Card, ...]) -> bool:
+    def should_call_tichu(self, hand: tuple[Card, ...]) -> bool:
         """Hand-strength gate for the (small) Tichu call: at least
         `_TICHU_MIN_ACES` Aces among the full 14-card hand *and* a Dragon or
-        Phoenix -- a slightly stricter bar than `_should_call_large_tichu`
+        Phoenix -- a slightly stricter bar than `should_call_large_tichu`
         since this decision is made later, with more information (and a
-        higher bonus/penalty at stake alongside the large-Tichu one)."""
+        higher bonus/penalty at stake alongside the large-Tichu one).
+
+        Public for the same reason as `should_call_large_tichu` -- reused by
+        `tichu_env.env.TichuEnv` to auto-resolve the (small) Tichu decision."""
         aces = sum(1 for card in hand if card.rank is Rank.ACE)
         has_dragon_or_phoenix = any(card.rank in (Rank.DRAGON, Rank.PHOENIX) for card in hand)
         return aces >= self._TICHU_MIN_ACES and has_dragon_or_phoenix

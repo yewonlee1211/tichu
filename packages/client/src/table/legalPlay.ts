@@ -3,6 +3,7 @@ import {
   cardKey,
   type Combo,
   ComboType,
+  DEFAULT_TARGET_SCORE,
   type GameState,
   legalCombos,
   NUM_PLAYERS,
@@ -23,9 +24,13 @@ export function legalCombosForView(view: PlayerView): Combo[] {
   const hands: Card[][] = Array.from({ length: NUM_PLAYERS }, () => []);
   hands[view.viewerSeat] = [...view.hand];
 
+  // Score fields don't affect combo legality; they're placeholders only so the
+  // literal satisfies GameState.
   const fakeState: GameState = {
     hands,
     pendingFinalCards: Array.from({ length: NUM_PLAYERS }, () => []),
+    teamScores: [0, 0],
+    targetScore: DEFAULT_TARGET_SCORE,
     phase: view.phase,
     currentPlayer: view.currentPlayer,
     trickLeader: view.trickLeader,

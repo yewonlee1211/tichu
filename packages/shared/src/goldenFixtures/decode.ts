@@ -71,6 +71,8 @@ export interface FixtureState {
   // dict[int, Card] this mirrors into exactly this shape).
   readonly receivedFrom: readonly Readonly<Record<string, FixtureCard>>[];
   readonly tichuDecided: readonly boolean[];
+  readonly teamScores: readonly [number, number];
+  readonly targetScore: number;
 }
 
 export function cardFromFixture(json: FixtureCard): Card {
@@ -93,13 +95,12 @@ export function comboFromFixture(json: FixtureCombo | null): Combo | null {
 }
 
 /** A single `encodeLegalActions` candidate as serialized by
- * `ai/scripts/generate_golden_fixtures.py`'s `ser_action` -- `true`/`false`
- * for a large-Tichu or (small) Tichu call/decline candidate, `null` for
+ * `ai/scripts/generate_golden_fixtures.py`'s `ser_action` -- `null` for
  * PASS, or a `FixtureCombo` for an ordinary trick-play candidate. */
-export type FixtureAction = FixtureCombo | boolean | null;
+export type FixtureAction = FixtureCombo | null;
 
-export function actionFromFixture(json: FixtureAction): Combo | boolean | null {
-  if (json === null || typeof json === 'boolean') return json;
+export function actionFromFixture(json: FixtureAction): Combo | null {
+  if (json === null) return json;
   return comboFromFixture(json);
 }
 
@@ -124,5 +125,7 @@ export function stateFromFixture(json: FixtureState): GameState {
       Object.fromEntries(Object.entries(byGiver).map(([giver, card]) => [Number(giver), cardFromFixture(card)])),
     ),
     tichuDecided: json.tichuDecided,
+    teamScores: json.teamScores,
+    targetScore: json.targetScore,
   };
 }

@@ -9,6 +9,7 @@ import { cardFromFixture, cardsFromFixture, stateFromFixture } from './goldenFix
 import { type Card, Rank, Suit } from './cards';
 import { ComboType, identifyCombo } from './combinations';
 import {
+  DEFAULT_TARGET_SCORE,
   type GameState,
   NUM_PLAYERS,
   Phase,
@@ -19,7 +20,6 @@ import {
   exchangeCards,
   isAwaitingTichuDecision,
   legalCombos,
-  nextUndecidedLargeTichuSeat,
   passTurn,
   playCombo,
 } from './gameState';
@@ -51,6 +51,8 @@ function makePlayingState(hands: Partial<Record<number, Card[]>>, overrides: Par
     mahjongWish: null,
     receivedFrom: Array.from({ length: NUM_PLAYERS }, () => ({})),
     tichuDecided: [false, false, false, false],
+    teamScores: [0, 0],
+    targetScore: DEFAULT_TARGET_SCORE,
   };
   return { ...base, ...overrides };
 }
@@ -182,7 +184,7 @@ describe('golden fixtures: tichu_call_decision', () => {
       ...cardsFromFixture(tichuCallDecisionFixture.dealtState.hands[i] as never),
       ...cardsFromFixture(tichuCallDecisionFixture.dealtState.pendingFinalCards[i] as never),
     ]);
-    const calls = [true, false, true, false];
+    const calls = [false, true, true, false];
 
     let state = dealNewRound(deck);
     for (let player = 0; player < NUM_PLAYERS; player += 1) {
@@ -200,7 +202,12 @@ describe('golden fixtures: tichu_call_decision', () => {
     expect(state).toEqual(stateFromFixture(tichuCallDecisionFixture.afterExchangeState as never));
 
     const leader = state.currentPlayer;
-    const other = (leader + 1) % NUM_PLAYERS;
+    // `other` must also have declined Grand Tichu (calls[other] === false) --
+    // a seat that called Grand Tichu has its (small) Tichu decision
+    // auto-resolved by decideLargeTichu, so isAwaitingTichuDecision would
+    // already be false for them (see gameState.ts's "Grand Tichu supersedes
+    // (small) Tichu" rule), which isn't what this test is exercising.
+    const other = calls.findIndex((called, seat) => called === false && seat !== leader);
     expect(leader).toBe(tichuCallDecisionFixture.leader);
     expect(isAwaitingTichuDecision(state, leader)).toBe(tichuCallDecisionFixture.awaitingBeforeDecision);
     // isAwaitingTichuDecision doesn't itself gate by turn order (it's purely
@@ -213,14 +220,6 @@ describe('golden fixtures: tichu_call_decision', () => {
     expect(state).toEqual(stateFromFixture(tichuCallDecisionFixture.afterTichuDecisionState as never));
     expect(isAwaitingTichuDecision(state, leader)).toBe(tichuCallDecisionFixture.awaitingAfterDecision);
     expect(decideTichu(state, leader, false).ok).toBe(false);
-  });
-});
-
-describe('nextUndecidedLargeTichuSeat', () => {
-  it('returns the lowest-numbered undecided seat, or null once all four have decided', () => {
-    expect(nextUndecidedLargeTichuSeat([null, null, null, null])).toBe(0);
-    expect(nextUndecidedLargeTichuSeat([true, null, false, null])).toBe(1);
-    expect(nextUndecidedLargeTichuSeat([true, false, true, false])).toBe(null);
   });
 });
 

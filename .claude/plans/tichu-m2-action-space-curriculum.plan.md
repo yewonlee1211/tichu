@@ -114,6 +114,14 @@
 
 **5단계는 "취소"가 아니라 "v3로 연기"**: 정책망이 스스로 콜 여부를 학습해서 판단하게 만들고 싶어지면(휴리스틱보다 나은 성능을 원하게 되면) 그때 5단계를 진행한다. 그 전까지는 우선순위 최하단에 둔다.
 
+### 학습 환경 자체에서 콜 액션 제거 (2026-09-16, 세션 `2026-09-16-m2-v3-model-train`)
+
+**결정**: v2는 *배포본 클라이언트*만 하이브리드 구조(위 "이미 검증된 패턴")로 우회했지만, *학습 환경*(`ai/tichu_env/env.py`)은 여전히 라지 티츄/티츄 콜을 정책망 액션으로 노출하고 있었다(`ACTION_DIM=73`, Stage 1~2에서 추가된 pseudo-action 포함) — 학습 환경과 배포 환경이 어긋나 있었다. 이 세션에서 `TichuEnv`가 두 콜 결정을 `_auto_exchange`와 같은 패턴으로 env 레벨에서 `AdvancedHeuristicAgent.should_call_large_tichu`/`should_call_tichu`(private → public화)로 직접 자동 해결하도록 전환했고, `encoding.py`의 `ACTION_DIM`에서 콜 pseudo-action 4개 오프셋을 제거했다(73→69). `OBS_DIM`의 콜 여부 관찰 필드(`_TICHU_CALLS_DIM`/`_LARGE_TICHU_CALLS_DIM`)는 그대로 유지 — 트릭 플레이는 여전히 "누가 티츄를 불렀는지"에 조건화되어 학습된다.
+
+**`HybridOpponent`/`epsilon_binary_call` 삭제**: 위 변경으로 `TichuEnv`가 `legal_actions`에 bool 타입 콜 결정을 절대 노출하지 않게 되면서, `ai/training/self_play.py`의 `HybridOpponent` 클래스(바로 위 문단에서 "이미 검증된 패턴"으로 언급된 그 클래스)와 `epsilon_binary_call` 강제 탐색 메커니즘 전체가 도달 불가능한 죽은 코드가 되어 이번 세션에서 삭제됨(`AdvancedHeuristicAgent.choose_action`/`HeuristicAgent.choose_action`의 bool 분기도 동일한 이유로 함께 삭제). **v3에서 5단계를 실제로 진행해 콜을 다시 학습 대상으로 되돌릴 때, 이 커밋 이전의 git 히스토리에서 두 메커니즘의 구현(특히 `epsilon_binary_call`의 강제 탐색 접근이 왜 실패했는지의 기록)을 참고할 것** — 코드를 그대로 되살리기보다는, `ACTION_DIM`이 그때 다시 달라질 것이므로 재설계가 필요할 가능성이 높지만, 실패했던 접근을 반복하지 않기 위한 참고 자료로 가치가 있다.
+
+**주의**: 이 시점부터 "이미 검증된 패턴"(바로 위 111번째 줄)에서 언급하는 `HybridOpponent`는 더 이상 코드베이스에 존재하지 않는다 — 개념(트릭 플레이는 정책망, 콜은 휴리스틱)은 여전히 유효하고 클라이언트(`soloGame.ts`)에도 여전히 그대로 살아있지만, 그 개념을 구현하던 Python 쪽 클래스 자체는 이제 env.py의 자동 해결 로직으로 대체되었다.
+
 ## 미해결 질문 (4단계 착수 전 확정 필요)
 
 - ~~티츄 콜을 매 턴 반복 제안할지 최초 1회만 제안할지~~ — **확정(2026-09-12, `2026-09-12-m2-stage0-baseline` 세션)**: 매 턴 반복이 아니라 플레이어별 "첫 카드를 내기 직전" 1회만 결정. 상세는 Stage 2 참고.

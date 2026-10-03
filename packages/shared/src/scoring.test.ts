@@ -30,6 +30,8 @@ function makeRoundOverState(overrides: Partial<GameState>): GameState {
     mahjongWish: null,
     receivedFrom: Array.from({ length: NUM_PLAYERS }, () => ({})),
     tichuDecided: [false, false, false, false],
+    teamScores: [0, 0],
+    targetScore: DEFAULT_TARGET_SCORE,
   };
   return { ...base, ...overrides };
 }

@@ -11,6 +11,7 @@ from tichu_env.legal_moves import candidate_card_sets
 
 NUM_PLAYERS = 4
 PARTNER = {0: 2, 1: 3, 2: 0, 3: 1}
+DEFAULT_TARGET_SCORE = 1000
 
 _BOMB_TYPES = frozenset({ComboType.BOMB_QUAD, ComboType.BOMB_STRAIGHT_FLUSH})
 
@@ -49,7 +50,15 @@ class GameState:
     # decision point yet -- needed because `tichu_calls` alone is bool, not
     # bool | None, so it can't distinguish "declined" from "hasn't been asked
     # yet" the way `large_tichu_calls` can. See `is_awaiting_tichu_decision`.
+    # Also set True by `decide_large_tichu` when a player calls Grand Tichu --
+    # that supersedes the (small) Tichu decision, so they're never asked.
     tichu_decided: tuple[bool, ...] = field(default_factory=lambda: (False,) * NUM_PLAYERS)
+    # Cumulative game score per team (indexed by TEAM_OF, i.e. seats 0/2 and
+    # 1/3) as of the start of this round, and the score at which a team wins
+    # the game. Only the enclosing game loop changes these between rounds --
+    # round-level transitions leave them alone.
+    team_scores: tuple[int, int] = (0, 0)
+    target_score: int = DEFAULT_TARGET_SCORE
 
 
 def deal_new_round(rng: random.Random | None = None) -> GameState:
@@ -88,6 +97,18 @@ def decide_large_tichu(state: GameState, player: int, called: bool) -> GameState
     calls = list(state.large_tichu_calls)
     calls[player] = called
     state = replace(state, large_tichu_calls=tuple(calls))
+
+    if called:
+        # Calling Grand Tichu supersedes the (small) Tichu call -- the real
+        # rules never offer that separate decision to a player who already
+        # committed to the bigger bonus. Marking tichu_decided here (rather
+        # than leaving is_awaiting_tichu_decision to somehow infer it from
+        # large_tichu_calls) keeps that function's own check simple and
+        # keeps this player's tichu_calls correctly False (they never
+        # actually called (small) Tichu, they called Grand Tichu).
+        decided = list(state.tichu_decided)
+        decided[player] = True
+        state = replace(state, tichu_decided=tuple(decided))
 
     if all(c is not None for c in state.large_tichu_calls):
         new_hands = tuple(state.hands[i] + state.pending_final_cards[i] for i in range(NUM_PLAYERS))

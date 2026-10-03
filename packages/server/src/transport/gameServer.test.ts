@@ -154,6 +154,8 @@ function legalCombosForView(view: PlayerView): Combo[] {
     mahjongWish: view.mahjongWish,
     receivedFrom: [{}, {}, {}, {}],
     tichuDecided: [false, false, false, false],
+    teamScores: [0, 0],
+    targetScore: 1000,
   };
   return legalCombos(fakeState, view.viewerSeat);
 }

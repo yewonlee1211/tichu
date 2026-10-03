@@ -228,7 +228,7 @@ export class SoloGame {
       }
       this.computeAiGiftsIfNeeded();
     } else {
-      this.state = dealNewRound(options.deck);
+      this.state = this.dealRound(options.deck);
       this.autoDecideAiLargeTichu();
     }
   }
@@ -295,6 +295,13 @@ export class SoloGame {
     this.roundScored = true;
   }
 
+  /** Deals a round carrying the game's running team scores, so the
+   * observation's remaining-to-win features match what the model was trained
+   * on (see ai/tichu_env/state.py's team_scores). */
+  private dealRound(deck?: readonly Card[]): GameState {
+    return { ...dealNewRound(deck), teamScores: this.cumulativeScores };
+  }
+
   private computeAiGiftsIfNeeded(): void {
     if (this.state.phase !== Phase.Exchange || this.pendingAiGifts !== null) return;
     const gifts: Record<number, Record<number, Card>> = {};
@@ -326,11 +333,7 @@ export class SoloGame {
       this.session,
       this.strategy,
     );
-    const chosenAction = candidates[chosenIndex]!.action;
-    if (typeof chosenAction === 'boolean') {
-      throw new Error('soloGame invariant violated: trick-play candidates should never include a boolean action');
-    }
-    const chosen = chosenAction;
+    const chosen = candidates[chosenIndex]!.action;
 
     if (chosen === null) {
       // Whoever actually won with the Dragon already decided the recipient
@@ -479,7 +482,7 @@ export class SoloGame {
     }
     if (this.isMatchOver()) return this.state;
 
-    this.state = dealNewRound(deck);
+    this.state = this.dealRound(deck);
     this.roundScored = false;
     this.pendingAiGifts = null;
     this.pendingDragonRecipient = null;

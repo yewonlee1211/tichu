@@ -1,13 +1,14 @@
 import { type Card, pointValue } from './cards';
-import { type GameState, NUM_PLAYERS, Phase } from './gameState';
+import { DEFAULT_TARGET_SCORE, type GameState, NUM_PLAYERS, Phase } from './gameState';
 import { type Result, err, ok } from './result';
+
+export { DEFAULT_TARGET_SCORE };
 
 export const TEAM_OF: Readonly<Record<number, number>> = { 0: 0, 1: 1, 2: 0, 3: 1 };
 
 export const TICHU_BONUS = 100;
 export const LARGE_TICHU_BONUS = 200;
 export const DOUBLE_WIN_BONUS = 200;
-export const DEFAULT_TARGET_SCORE = 1000;
 
 export function teamOf(player: number): number {
   return TEAM_OF[player]!;

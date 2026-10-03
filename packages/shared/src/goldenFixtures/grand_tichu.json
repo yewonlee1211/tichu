@@ -1,8 +1,8 @@
 {
   "name": "grand_tichu",
   "description": "그랜드 티츄: 성공한 그랜드 티츄 콜의 스코어링",
-  "obsDim": 352,
-  "actionDim": 73,
+  "obsDim": 358,
+  "actionDim": 69,
   "dealtState": {
     "hands": [
       [
@@ -287,7 +287,12 @@
       false,
       false,
       false
-    ]
+    ],
+    "teamScores": [
+      0,
+      0
+    ],
+    "targetScore": 1000
   },
   "afterLargeTichuState": {
     "hands": [
@@ -565,11 +570,16 @@
       {}
     ],
     "tichuDecided": [
-      false,
+      true,
       false,
       false,
       false
-    ]
+    ],
+    "teamScores": [
+      0,
+      0
+    ],
+    "targetScore": 1000
   },
   "finishedState": {
     "hands": [
@@ -685,11 +695,16 @@
       {}
     ],
     "tichuDecided": [
-      false,
+      true,
       false,
       false,
       false
-    ]
+    ],
+    "teamScores": [
+      0,
+      0
+    ],
+    "targetScore": 1000
   },
   "observationForCaller": [
     0.0,
@@ -840,14 +855,20 @@
     0.0,
     0.0,
     0.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
     0.0,
     1.0,
     0.0,
     0.0,
-    1.0,
     0.0,
     1.0,
     0.0,
+    0.0,
+    0.0,
+    1.0,
     1.0,
     1.0,
     0.0,

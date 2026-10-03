@@ -6,11 +6,13 @@ from typing import Optional
 
 import numpy as np
 
+from agents.advanced_heuristic import AdvancedHeuristicAgent
 from tichu_env.cards import Card, Rank
 from tichu_env.combinations import Combo, ComboType
 from tichu_env.encoding import encode_legal_actions, encode_observation
 from tichu_env.scoring import score_round
 from tichu_env.state import (
+    DEFAULT_TARGET_SCORE,
     NUM_PLAYERS,
     PARTNER,
     GameState,
@@ -30,7 +32,7 @@ from tichu_env.state import (
 class StepResult:
     player: int
     observation: np.ndarray
-    legal_actions: list[tuple[Combo | bool | None, np.ndarray]]
+    legal_actions: list[tuple[Combo | None, np.ndarray]]
     reward: float
     done: bool
     info: dict
@@ -38,19 +40,31 @@ class StepResult:
 
 
 class TichuEnv:
-    """A single-round Tichu environment. The RL action space currently
-    covers the large-Tichu call/decline decision (`Phase.LARGE_TICHU`, one
-    per player, `True`/`False`), the (small) Tichu call/decline decision
-    (offered once per player, right before their first `Phase.PLAYING`
-    action -- see `state.is_awaiting_tichu_decision`, also `True`/`False`),
-    and trick play (`Phase.PLAYING`, a `Combo` or `None` to pass). Card
-    exchange is still auto-resolved by a fixed heuristic (see
-    `_auto_exchange`) rather than exposed as a decision -- see
-    .claude/plans/tichu-m2-action-space-curriculum.plan.md's "결정 3" for why."""
+    """A single-round Tichu environment. The RL action space is trick play
+    only (`Phase.PLAYING`, a `Combo` or `None` to pass). The large-Tichu
+    call/decline decision (`Phase.LARGE_TICHU`), the (small) Tichu
+    call/decline decision (offered once per player, right before their
+    first `Phase.PLAYING` action -- see `state.is_awaiting_tichu_decision`),
+    and card exchange are all auto-resolved internally by a fixed heuristic
+    (`AdvancedHeuristicAgent`, see `_auto_resolve_calls` and
+    `_auto_exchange`) rather than exposed as RL decisions -- trick play is
+    conditioned on the outcome anyway via `encoding.OBS_DIM`'s call/exchange
+    observation fields, which are unaffected by this. See
+    .claude/plans/tichu-m2-action-space-curriculum.plan.md for the curriculum
+    history: card exchange was auto-resolved from the start ("결정 3"), while
+    the calls were briefly RL-trainable (Stage 1/2) before their action head
+    collapsed to always-decline regardless of hand strength and calls were
+    moved to this same auto-resolved pattern -- see the plan's "5단계" for
+    the collapse diagnosis and what reintroducing them as trainable actions
+    would require."""
 
-    def __init__(self, rng: random.Random | None = None):
+    def __init__(self, rng: random.Random | None = None, target_score: int = DEFAULT_TARGET_SCORE):
+        if target_score <= 0:
+            raise ValueError("target_score must be positive")
         self._rng = rng if rng is not None else random.Random()
+        self._target_score = target_score
         self._state: GameState | None = None
+        self._heuristic = AdvancedHeuristicAgent()
 
     @property
     def state(self) -> GameState:
@@ -66,21 +80,17 @@ class TichuEnv:
     def done(self) -> bool:
         return self.state.phase is Phase.ROUND_OVER
 
-    def reset(self) -> StepResult:
-        self._state = deal_new_round(self._rng)
+    def reset(self, team_scores: tuple[int, int] = (0, 0)) -> StepResult:
+        state = replace(deal_new_round(self._rng), team_scores=team_scores, target_score=self._target_score)
+        self._state = self._auto_resolve_calls(state)
         return self._observe_current(reward=0.0, done=False, info={})
 
-    def step(self, action: Combo | bool | None) -> StepResult:
+    def step(self, action: Combo | None) -> StepResult:
         state = self.state
         player = state.current_player
 
-        if state.phase is Phase.LARGE_TICHU:
-            new_state = self._step_large_tichu(state, player, action)
-        elif is_awaiting_tichu_decision(state, player):
-            new_state = self._step_tichu_decision(state, player, action)
-        else:
-            new_state = self._step_trick_play(state, player, action)
-
+        new_state = self._step_trick_play(state, player, action)
+        new_state = self._auto_resolve_calls(new_state)
         self._state = new_state
 
         info: dict = {}
@@ -90,18 +100,33 @@ class TichuEnv:
 
         return self._observe_current(reward=0.0, done=done, info=info)
 
-    def _step_large_tichu(self, state: GameState, player: int, action: object) -> GameState:
-        if not isinstance(action, bool):
-            raise ValueError("during Phase.LARGE_TICHU, the action must be True (call) or False (decline)")
-        new_state = decide_large_tichu(state, player, called=action)
-        if new_state.phase is Phase.EXCHANGE:
-            new_state = _auto_exchange(new_state)
-        return new_state
+    def _auto_resolve_calls(self, state: GameState) -> GameState:
+        """Resolves every pending large-Tichu/Tichu call decision for
+        whichever player is up next via the fixed heuristic, looping until
+        the state actually needs a trick-play action (or the round ends) --
+        the same non-RL auto-resolution `_auto_exchange` already does for
+        card exchange, now covering the two call decisions too (see the
+        class docstring). Each decision only advances `state.current_player`
+        by itself for the large-Tichu round (one decision per player before
+        anyone starts playing); the (small) Tichu decision does not consume
+        the deciding player's real turn, so after resolving it this loop
+        re-checks the same player before falling through to trick play."""
+        while True:
+            if state.phase is Phase.LARGE_TICHU:
+                player = state.current_player
+                called = self._heuristic.should_call_large_tichu(state.hands[player])
+                state = decide_large_tichu(state, player, called=called)
+                if state.phase is Phase.EXCHANGE:
+                    state = _auto_exchange(state)
+                continue
 
-    def _step_tichu_decision(self, state: GameState, player: int, action: object) -> GameState:
-        if not isinstance(action, bool):
-            raise ValueError("during the tichu call/decline decision, the action must be True (call) or False (decline)")
-        return decide_tichu(state, player, called=action)
+            if is_awaiting_tichu_decision(state, state.current_player):
+                player = state.current_player
+                called = self._heuristic.should_call_tichu(state.hands[player])
+                state = decide_tichu(state, player, called=called)
+                continue
+
+            return state
 
     def _step_trick_play(self, state: GameState, player: int, action: Combo | None) -> GameState:
         legal = legal_combos(state, player)

@@ -4,7 +4,7 @@ import numpy as np
 
 from tichu_env.combinations import BOMB_TYPES, Combo
 
-LegalAction = tuple[Combo | bool | None, np.ndarray]
+LegalAction = tuple[Combo | None, np.ndarray]
 
 
 class HeuristicAgent:
@@ -13,16 +13,13 @@ class HeuristicAgent:
     the only legal action, and passes rather than beat a trick with a bomb
     whenever passing is available. This exists to validate the environment
     (a working environment should let this consistently outplay
-    `RandomAgent`) and as a baseline for self-play evaluation later."""
+    `RandomAgent`) and as a baseline for self-play evaluation later.
 
-    def choose_action(self, legal_actions: list[LegalAction]) -> Combo | bool | None:
-        if any(isinstance(action, bool) for action, _ in legal_actions):
-            # Large-Tichu decision: this agent only ever sees the pseudo-action
-            # vectors (no hand access -- see `LegalAction`), so it always
-            # declines rather than guess. `AdvancedHeuristicAgent` is the one
-            # that decides this from actual hand strength.
-            return False
+    Trick play only -- the large-Tichu and (small) Tichu call decisions are
+    auto-resolved by `TichuEnv` itself now (see its class docstring) and
+    never reach `legal_actions` here."""
 
+    def choose_action(self, legal_actions: list[LegalAction]) -> Combo | None:
         non_bomb_plays = [combo for combo, _ in legal_actions if combo is not None and combo.combo_type not in BOMB_TYPES]
         if non_bomb_plays:
             return min(non_bomb_plays, key=lambda combo: combo.rank_strength)

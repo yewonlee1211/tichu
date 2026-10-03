@@ -109,6 +109,39 @@ def test_cannot_decide_large_tichu_twice():
         decide_large_tichu(state, 0, called=True)
 
 
+def test_calling_large_tichu_marks_tichu_decided_and_skips_the_small_tichu_decision():
+    """Calling Grand Tichu supersedes the (small) Tichu decision -- the real
+    rules never offer that separate call to a player who already committed
+    to the bigger bonus, so tichu_decided should already be True the instant
+    they call it, and is_awaiting_tichu_decision/decide_tichu should treat
+    them as already resolved once play begins."""
+    state = deal_new_round(random.Random(2))
+    state = decide_large_tichu(state, 0, called=True)
+    assert state.tichu_decided[0] is True
+    assert state.tichu_calls[0] is False
+
+    for player in range(1, 4):
+        state = decide_large_tichu(state, player, called=False)
+    assert state.phase is Phase.EXCHANGE
+
+    gifts = {}
+    for giver in range(NUM_PLAYERS):
+        others = [p for p in range(NUM_PLAYERS) if p != giver]
+        gifts[giver] = {recipient: state.hands[giver][i] for i, recipient in enumerate(others)}
+    state = exchange_cards(state, gifts)
+
+    assert state.phase is Phase.PLAYING
+    assert is_awaiting_tichu_decision(state, 0) is False
+    with pytest.raises(ValueError):
+        decide_tichu(state, 0, called=False)
+
+
+def test_declining_large_tichu_still_offers_the_small_tichu_decision():
+    state = deal_new_round(random.Random(2))
+    state = decide_large_tichu(state, 0, called=False)
+    assert state.tichu_decided[0] is False
+
+
 def test_call_tichu_requires_full_14_card_hand():
     state = deal_new_round(random.Random(4))
     for player in range(NUM_PLAYERS):

@@ -1,7 +1,10 @@
 import random
 
+import pytest
+
+from agents.advanced_heuristic import AdvancedHeuristicAgent
 from tichu_env.env import TichuEnv
-from tichu_env.state import Phase
+from tichu_env.state import NUM_PLAYERS, Phase, deal_new_round
 
 
 def _play_full_round(env: TichuEnv, rng: random.Random) -> None:
@@ -24,48 +27,71 @@ def test_random_agent_completes_many_rounds_without_crashing():
         assert env.state.phase is Phase.ROUND_OVER
 
 
-def test_reset_lands_in_large_tichu_phase_with_8_card_hands():
+def test_reset_lands_directly_in_playing_phase_with_14_card_hands():
+    """Large-Tichu and card exchange are both auto-resolved internally now
+    (see TichuEnv's class docstring), so reset() never leaves Phase.LARGE_TICHU
+    or Phase.EXCHANGE observable to a caller -- it goes straight to trick play."""
     env = TichuEnv(rng=random.Random(1))
 
     result = env.reset()
 
-    assert env.state.phase is Phase.LARGE_TICHU
-    assert all(len(hand) == 8 for hand in env.state.hands)
+    assert env.state.phase is Phase.PLAYING
+    assert all(len(hand) == 14 for hand in env.state.hands)
     assert result.done is False
 
 
-def test_legal_actions_during_large_tichu_offers_only_call_and_decline_for_the_current_seat():
+def test_reset_auto_resolves_large_tichu_calls_matching_the_heuristic():
+    """Exact-state-diff check: the large-Tichu call recorded for each seat
+    after reset() must match what AdvancedHeuristicAgent.should_call_large_tichu
+    would decide from that seat's actual 8-card deal -- not just "some call
+    was made". Uses a freshly seeded RNG to independently reproduce the same
+    deal `TichuEnv.reset()` itself draws from an identically seeded `rng`."""
+    seed = 7
+    pre_decision_state = deal_new_round(random.Random(seed))
+    heuristic = AdvancedHeuristicAgent()
+    expected_calls = tuple(
+        heuristic.should_call_large_tichu(pre_decision_state.hands[player]) for player in range(NUM_PLAYERS)
+    )
+
+    env = TichuEnv(rng=random.Random(seed))
+    result = env.reset()
+
+    assert result.state.large_tichu_calls == expected_calls
+
+
+def test_reset_auto_resolves_the_current_players_tichu_decision():
     env = TichuEnv(rng=random.Random(1))
 
     result = env.reset()
 
-    assert {action for action, _ in result.legal_actions} == {True, False}
+    assert result.state.tichu_decided[result.player] is True
 
 
-def test_declining_large_tichu_four_times_reaches_playing_phase_with_14_card_hands():
+def test_legal_actions_after_reset_never_offer_a_bool_decision():
+    env = TichuEnv(rng=random.Random(1))
+
+    result = env.reset()
+
+    assert all(not isinstance(action, bool) for action, _ in result.legal_actions)
+
+
+def test_every_players_tichu_decision_gets_auto_resolved_by_their_first_turn():
+    """Each seat's (small) Tichu decision is only made once it's actually
+    their turn (see `_auto_resolve_calls`'s docstring) -- walk the round
+    until every seat has had a turn and confirm none of them ever see a bool
+    legal action, and all end up decided."""
     env = TichuEnv(rng=random.Random(1))
     result = env.reset()
 
-    for _ in range(4):
-        assert result.state.phase is Phase.LARGE_TICHU
-        decline = next(action for action, _ in result.legal_actions if action is False)
-        result = env.step(decline)
+    rng = random.Random(99)
+    seen_players = {result.player}
+    while not result.done and len(seen_players) < NUM_PLAYERS:
+        assert all(not isinstance(action, bool) for action, _ in result.legal_actions)
+        combo, _ = rng.choice(result.legal_actions)
+        result = env.step(combo)
+        seen_players.add(result.player)
 
-    assert result.state.phase is Phase.PLAYING
-    assert all(len(hand) == 14 for hand in result.state.hands)
-    assert result.done is False
-
-
-def test_step_rejects_a_non_bool_action_during_large_tichu_phase():
-    env = TichuEnv(rng=random.Random(1))
-    env.reset()
-
-    try:
-        env.step(None)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("expected step() to reject a non-bool action during Phase.LARGE_TICHU")
+    assert all(result.state.tichu_decided)
 
 
 def test_step_raises_on_action_outside_legal_set():
@@ -86,74 +112,6 @@ def test_step_raises_on_action_outside_legal_set():
             raise AssertionError("expected step() to reject a card the current player does not hold")
 
 
-def _decline_large_tichu_for_everyone(env: TichuEnv):
-    result = env.reset()
-    for _ in range(4):
-        decline = next(action for action, _ in result.legal_actions if action is False)
-        result = env.step(decline)
-    return result
-
-
-def test_legal_actions_offer_tichu_call_and_decline_at_a_players_first_turn():
-    env = TichuEnv(rng=random.Random(1))
-    result = _decline_large_tichu_for_everyone(env)
-
-    assert result.state.phase is Phase.PLAYING
-    assert {action for action, _ in result.legal_actions} == {True, False}
-
-
-def test_declining_tichu_then_proceeds_to_ordinary_trick_play_actions():
-    env = TichuEnv(rng=random.Random(1))
-    result = _decline_large_tichu_for_everyone(env)
-    decliner = result.state.current_player
-
-    result = env.step(False)
-
-    assert result.state.current_player == decliner, "the decision doesn't consume their real turn"
-    assert result.state.tichu_decided[decliner] is True
-    assert result.state.tichu_calls[decliner] is False
-    assert all(not isinstance(action, bool) for action, _ in result.legal_actions)
-
-
-def test_calling_tichu_records_the_call_and_then_proceeds_to_trick_play():
-    env = TichuEnv(rng=random.Random(1))
-    result = _decline_large_tichu_for_everyone(env)
-    caller = result.state.current_player
-
-    result = env.step(True)
-
-    assert env.state.tichu_calls[caller] is True
-    assert all(not isinstance(action, bool) for action, _ in result.legal_actions)
-
-
-def test_tichu_decision_is_never_offered_again_once_decided():
-    env = TichuEnv(rng=random.Random(1))
-    result = _decline_large_tichu_for_everyone(env)
-    first_player = result.state.current_player
-    result = env.step(False)
-
-    # Play the round out; whenever it's first_player's turn again, they must
-    # never see the bool tichu decision a second time.
-    rng = random.Random(99)
-    while not result.done:
-        if result.player == first_player:
-            assert all(not isinstance(action, bool) for action, _ in result.legal_actions)
-        combo, _ = rng.choice(result.legal_actions)
-        result = env.step(combo)
-
-
-def test_step_rejects_a_non_bool_action_during_the_tichu_decision():
-    env = TichuEnv(rng=random.Random(1))
-    _decline_large_tichu_for_everyone(env)
-
-    try:
-        env.step(None)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("expected step() to reject a non-bool action during the tichu call decision")
-
-
 def test_step_result_exposes_the_current_game_state():
     env = TichuEnv(rng=random.Random(4))
 
@@ -163,6 +121,42 @@ def test_step_result_exposes_the_current_game_state():
     combo, _ = reset_result.legal_actions[0]
     step_result = env.step(combo)
     assert step_result.state == env.state
+
+
+def test_reset_defaults_to_zero_team_scores_and_the_standard_1000_point_target():
+    env = TichuEnv(rng=random.Random(5))
+
+    result = env.reset()
+
+    assert result.state.team_scores == (0, 0)
+    assert result.state.target_score == 1000
+
+
+def test_reset_carries_the_configured_target_and_starting_scores_into_the_state():
+    env = TichuEnv(rng=random.Random(5), target_score=500)
+
+    result = env.reset(team_scores=(120, 340))
+
+    assert result.state.team_scores == (120, 340)
+    assert result.state.target_score == 500
+
+
+def test_env_rejects_a_non_positive_target_score():
+    with pytest.raises(ValueError):
+        TichuEnv(rng=random.Random(5), target_score=0)
+
+
+def test_a_round_plays_out_with_nonzero_starting_scores_and_a_custom_target():
+    rng = random.Random(6)
+    env = TichuEnv(rng=rng, target_score=700)
+    result = env.reset(team_scores=(650, 400))
+
+    while not result.done:
+        combo, _ = rng.choice(result.legal_actions)
+        result = env.step(combo)
+
+    assert result.state.team_scores == (650, 400)
+    assert "team_scores" in result.info
 
 
 def test_finished_round_reports_team_scores_in_info():

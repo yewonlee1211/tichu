@@ -17,9 +17,7 @@ from agents.heuristic import HeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 from training.opponent_pool import OpponentPool
 from training.self_play import (
-    DEFAULT_EPSILON_BINARY_CALL,
     HeuristicOpponentAdapter,
-    HybridOpponent,
     PolicyOpponent,
     Transition,
     generate_self_play_games,
@@ -144,10 +142,10 @@ def find_latest_training_state(checkpoint_dir: Path) -> Path | None:
 def load_warm_start_state_dict(network: TichuPolicyValueNet, checkpoint_path: Path) -> list[str]:
     """Loads `checkpoint_path` (a `checkpoint_*.pt` model-weights-only file) into
     `network`, skipping any parameter whose shape no longer matches -- e.g.
-    `action_encoder.0.{weight,bias}` after `ACTION_DIM` grows between curriculum
-    stages (see .claude/plans/tichu-m2-action-space-curriculum.plan.md). Every
-    other parameter (`state_encoder`/`action_encoder.2`/`action_scorer`/
-    `value_head`) is unaffected by that growth and loads unchanged, so a new
+    `action_encoder.0.weight` after `ACTION_DIM` grows or shrinks between
+    curriculum stages (see .claude/plans/tichu-m2-action-space-curriculum.plan.md).
+    Every other parameter (`state_encoder`/`action_encoder.2`/`action_scorer`/
+    `value_head`) is unaffected by that change and loads unchanged, so a new
     stage's network starts from the previous stage's learned representations
     instead of from scratch. Returns the list of skipped parameter names (left
     at `network`'s own fresh initialization) so a caller can log/verify what
@@ -169,28 +167,35 @@ def load_warm_start_state_dict(network: TichuPolicyValueNet, checkpoint_path: Pa
 
 def migrate_action_encoder_input_layer(network: TichuPolicyValueNet, checkpoint_path: Path) -> None:
     """Repairs the one gap `load_warm_start_state_dict` leaves behind when
-    `ACTION_DIM` grows: that function must skip `action_encoder.0.weight`
-    entirely once its shape changes, which throws away every previously
-    learned column, not just the newly inserted ones.
+    `ACTION_DIM` changes between stages: that function must skip
+    `action_encoder.0.weight` entirely once its shape changes, which throws
+    away every previously learned column, not just the ones that actually
+    moved or disappeared.
 
     This project's encoding convention (see `tichu_env/encoding.py`) always
-    keeps PASS as the very last action dimension and inserts any new
-    pseudo-action flag columns (e.g. Stage 1's large-Tichu call/decline) just
-    before it -- so every column except PASS keeps the same meaning at the
-    same index across a stage boundary, and PASS itself just moves from the
-    old last index to the new one. This copies exactly those matching
-    columns from `checkpoint_path` into `network`'s (freshly initialized)
-    `action_encoder.0.weight`, leaving only the genuinely new columns at
-    their random initialization. No-op if the shape already matches (nothing
-    grew, so `load_warm_start_state_dict` already loaded it directly)."""
+    keeps PASS as the very last action dimension and adds/removes any
+    pseudo-action flag columns (e.g. Stage 1's large-Tichu call/decline, or
+    this session's removal of both call decisions from the action space --
+    see .claude/plans/tichu-m2-action-space-curriculum.plan.md) as a
+    contiguous block immediately before it -- so every other column keeps
+    the same meaning at the same index across a stage boundary, and PASS
+    itself just moves from the old last index to the new one, in either
+    direction. This copies exactly those matching leading columns from
+    `checkpoint_path` into `network`'s (freshly initialized)
+    `action_encoder.0.weight`, plus PASS's column, leaving only genuinely
+    new columns (when growing) at their random initialization. No-op if the
+    shape already matches (nothing changed, so `load_warm_start_state_dict`
+    already loaded it directly)."""
     checkpoint_state = torch.load(checkpoint_path, weights_only=True)
     old_weight = checkpoint_state["action_encoder.0.weight"]
     new_weight = network.action_encoder[0].weight.data
     if old_weight.shape == new_weight.shape:
         return
     old_action_dim = old_weight.shape[1]
+    new_action_dim = new_weight.shape[1]
+    shared_prefix = min(old_action_dim, new_action_dim) - 1
     with torch.no_grad():
-        new_weight[:, : old_action_dim - 1] = old_weight[:, : old_action_dim - 1]
+        new_weight[:, :shared_prefix] = old_weight[:, :shared_prefix]
         new_weight[:, -1] = old_weight[:, -1]
 
 
@@ -351,7 +356,6 @@ def train(
     opponent_pool: OpponentPool | None = None,
     ppo_epochs: int | None = None,
     clip_epsilon: float = DEFAULT_CLIP_EPSILON,
-    epsilon_binary_call: float = DEFAULT_EPSILON_BINARY_CALL,
     self_play_workers: int = 1,
     rng: random.Random | None = None,
     checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
@@ -374,13 +378,6 @@ def train(
     team1's seats every game (see `training.self_play.play_self_play_round`); only
     team0's transitions -- the network's own -- ever feed the loss. Left `None`,
     `network` mirrors itself at all 4 seats, as before.
-
-    `epsilon_binary_call` is forwarded to `generate_self_play_games`/
-    `play_self_play_round` unchanged: with that probability, the large-Tichu
-    or (small) Tichu call/decline decision is forced to a uniform-random
-    choice instead of policy-weighted sampling, on `network`'s own turns
-    only. Left at its default of 0.0, behavior is unchanged from before this
-    parameter existed.
 
     `self_play_workers`, left at its default of 1, calls `generate_self_play_games`
     directly, exactly as before this parameter existed (including its exact RNG draw
@@ -498,7 +495,6 @@ def train(
             opponent_pool=opponent_pool,
             ppo_epochs=ppo_epochs,
             clip_epsilon=clip_epsilon,
-            epsilon_binary_call=epsilon_binary_call,
             self_play_workers=self_play_workers,
             checkpoint_dir=checkpoint_dir,
             checkpoint_every=checkpoint_every,
@@ -524,7 +520,6 @@ def _run_training_loop(
     opponent_pool: OpponentPool | None,
     ppo_epochs: int | None,
     clip_epsilon: float,
-    epsilon_binary_call: float,
     self_play_workers: int,
     checkpoint_dir: Path,
     checkpoint_every: int,
@@ -555,7 +550,6 @@ def _run_training_loop(
                     rng=rng,
                     opponent=opponent,
                     opponent_factory=opponent_factory,
-                    epsilon_binary_call=epsilon_binary_call,
                 )
             else:
                 episodes = generate_self_play_games_parallel(
@@ -565,7 +559,6 @@ def _run_training_loop(
                     rng=rng,
                     opponent=opponent,
                     opponent_factory=opponent_factory,
-                    epsilon_binary_call=epsilon_binary_call,
                 )
 
             if ppo_epochs is not None:
@@ -667,16 +660,6 @@ def _main() -> None:
         help="Cap on the opponent pool's size; oldest snapshots are evicted first once exceeded.",
     )
     parser.add_argument(
-        "--hybrid-opponent-checkpoint",
-        type=Path,
-        default=None,
-        help="Fix team1's seats to a HybridOpponent wrapping this checkpoint_*.pt: trick play "
-        "comes from the checkpoint's own policy, but the large-Tichu/(small) Tichu call "
-        "decisions come from AdvancedHeuristicAgent's hand-strength rules instead of the "
-        "checkpoint's own (collapsed) call policy. Mutually exclusive with --heuristic-opponent "
-        "and --opponent-pool.",
-    )
-    parser.add_argument(
         "--ppo-epochs",
         type=int,
         default=None,
@@ -688,14 +671,6 @@ def _main() -> None:
         type=float,
         default=DEFAULT_CLIP_EPSILON,
         help="PPO's trust-region width; only used when --ppo-epochs is set.",
-    )
-    parser.add_argument(
-        "--epsilon-binary-call",
-        type=float,
-        default=DEFAULT_EPSILON_BINARY_CALL,
-        help="Force a uniform-random large-Tichu or (small) Tichu call/decline choice with "
-        "this probability, on the network's own turns, instead of always sampling from its "
-        "policy.",
     )
     parser.add_argument(
         "--self-play-workers",
@@ -732,13 +707,8 @@ def _main() -> None:
     )
     args = parser.parse_args()
 
-    opponent_modes_set = sum(
-        [args.heuristic_opponent, args.opponent_pool, args.hybrid_opponent_checkpoint is not None]
-    )
-    if opponent_modes_set > 1:
-        parser.error(
-            "--heuristic-opponent, --opponent-pool, and --hybrid-opponent-checkpoint are mutually exclusive"
-        )
+    if args.heuristic_opponent and args.opponent_pool:
+        parser.error("--heuristic-opponent and --opponent-pool are mutually exclusive")
     if args.warm_start_from is not None and (args.resume or args.resume_from is not None):
         parser.error("--warm-start-from and --resume/--resume-from are mutually exclusive")
 
@@ -756,10 +726,6 @@ def _main() -> None:
         migrate_action_encoder_input_layer(network, args.warm_start_from)
     rng = random.Random(args.seed) if args.seed is not None else None
     opponent = AdvancedHeuristicAgent() if args.heuristic_opponent else None
-    if args.hybrid_opponent_checkpoint is not None:
-        hybrid_network = TichuPolicyValueNet()
-        hybrid_network.load_state_dict(torch.load(args.hybrid_opponent_checkpoint, weights_only=True))
-        opponent = HybridOpponent(hybrid_network, rng if rng is not None else random.Random())
     opponent_pool = None
     if args.opponent_pool:
         opponent_pool = OpponentPool(max_size=args.opponent_pool_max_size)
@@ -779,7 +745,6 @@ def _main() -> None:
         opponent_pool=opponent_pool,
         ppo_epochs=args.ppo_epochs,
         clip_epsilon=args.clip_epsilon,
-        epsilon_binary_call=args.epsilon_binary_call,
         self_play_workers=args.self_play_workers,
         rng=rng,
         checkpoint_dir=args.checkpoint_dir,

@@ -5,6 +5,7 @@ import {
   type Combo,
   type GameState,
   ComboType,
+  DEFAULT_TARGET_SCORE,
   NUM_PLAYERS,
   PARTNER,
   Phase,
@@ -872,6 +873,8 @@ describe('SoloGame: a Dragon trick recipient is decided by whoever actually won 
     mahjongWish: null,
     receivedFrom: [{}, {}, {}, {}],
     tichuDecided: [true, true, true, true],
+    teamScores: [0, 0],
+    targetScore: DEFAULT_TARGET_SCORE,
     ...overrides,
   });
 

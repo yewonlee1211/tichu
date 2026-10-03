@@ -1,8 +1,8 @@
 {
   "name": "double_out",
   "description": "더블 아웃: 파트너 두 명이 1/2등으로 동시에 아웃되며 라운드 종료",
-  "obsDim": 352,
-  "actionDim": 73,
+  "obsDim": 358,
+  "actionDim": 69,
   "beforeState": {
     "hands": [
       [],
@@ -62,7 +62,12 @@
       false,
       false,
       false
-    ]
+    ],
+    "teamScores": [
+      850,
+      620
+    ],
+    "targetScore": 1000
   },
   "afterPlayState": {
     "hands": [
@@ -124,7 +129,12 @@
       false,
       false,
       false
-    ]
+    ],
+    "teamScores": [
+      850,
+      620
+    ],
+    "targetScore": 1000
   },
   "observationForWinner": [
     0.0,
@@ -272,18 +282,24 @@
     0.0,
     0.0,
     0.0,
+    1.0,
+    0.0,
     0.0,
     0.0,
     1.0,
     0.0,
     0.0,
-    1.0,
     0.0,
     1.0,
     0.0,
-    1.0,
+    0.0,
     0.0,
     1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.3799999952316284,
+    0.15000000596046448,
     1.0,
     0.0,
     0.0,

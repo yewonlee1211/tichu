@@ -106,6 +106,8 @@ def ser_state(state: GameState) -> dict:
         "mahjongWish": state.mahjong_wish.name if state.mahjong_wish is not None else None,
         "receivedFrom": [{str(giver): ser_card(c) for giver, c in d.items()} for d in state.received_from],
         "tichuDecided": list(state.tichu_decided),
+        "teamScores": list(state.team_scores),
+        "targetScore": state.target_score,
     }
 
 
@@ -117,8 +119,8 @@ def ser_observation(state: GameState, player: int) -> list:
     return ser_vec(encode_observation(state, player))
 
 
-def ser_action(action: Combo | bool | None) -> dict | bool | None:
-    if action is None or isinstance(action, bool):
+def ser_action(action: Combo | None) -> dict | None:
+    if action is None:
         return action
     return ser_combo(action)
 
@@ -234,6 +236,7 @@ def build_double_out() -> dict:
         trick_leader=3,
         finished_order=(1,),
         tichu_calls=(False, True, False, False),
+        team_scores=(850, 620),
     )
     before = ser_state(state)
 
@@ -336,17 +339,29 @@ def build_grand_tichu() -> dict:
 
 
 def build_tichu_call_decision() -> dict:
-    """Deal (seed=3) -> large tichu decisions mix True/False/True/False
-    (exercises the two-bit called/declined observation encoding) -> exchange
-    (also populates received_from) -> the leader is offered the (small) Tichu
-    call/decline decision before their first play (see
-    state.is_awaiting_tichu_decision / decide_tichu), while a non-current
-    player sees no legal actions yet; the leader calls it, then normal
-    trick-play legal actions resume."""
+    """Deal (seed=3) -> large tichu decisions mix False/True/True/False
+    (exercises the 4-category undecided/declined/tichu/grand_tichu
+    observation encoding) -> exchange (also populates received_from) -> the
+    leader (seat 0 for this seed, who declined grand Tichu and hasn't yet
+    decided (small) Tichu, still holding all 14 cards) is at the
+    state.is_awaiting_tichu_decision decision point; state.decide_tichu is
+    called directly here to document the state-level transition. (Seat 0
+    specifically declined grand Tichu in this call pattern -- had it called
+    grand Tichu instead, decide_large_tichu would have already marked its
+    tichu_decided True, and this decide_tichu call would raise; see
+    state.py's "Grand Tichu supersedes (small) Tichu" rule.)
+
+    This fixture used to also exercise `encode_legal_actions` offering a
+    bool call/decline choice at this point, but that's no longer part of the
+    action space -- `TichuEnv` auto-resolves both call decisions internally
+    via a fixed heuristic now (see TichuEnv._auto_resolve_calls and
+    .claude/plans/tichu-m2-action-space-curriculum.plan.md), so
+    encode_legal_actions raises if called on a state with a pending call
+    decision rather than offering one."""
     state = deal_new_round(random.Random(3))
     dealt = ser_state(state)
 
-    calls = [True, False, True, False]
+    calls = [False, True, True, False]
     for player in range(NUM_PLAYERS):
         state = decide_large_tichu(state, player, called=calls[player])
     after_large_tichu = ser_state(state)
@@ -361,10 +376,7 @@ def build_tichu_call_decision() -> dict:
     after_exchange = ser_state(state)
 
     leader = state.current_player
-    other = (leader + 1) % NUM_PLAYERS
     awaiting_before_decision = is_awaiting_tichu_decision(state, leader)
-    legal_actions_for_other_before_decision = ser_legal_actions(state, other)
-    legal_actions_before_decision = ser_legal_actions(state, leader)
 
     state = decide_tichu(state, leader, called=True)
     after_tichu_decision = ser_state(state)
@@ -378,8 +390,6 @@ def build_tichu_call_decision() -> dict:
         "afterExchangeState": after_exchange,
         "leader": leader,
         "awaitingBeforeDecision": awaiting_before_decision,
-        "legalActionsForOtherBeforeDecision": legal_actions_for_other_before_decision,
-        "legalActionsBeforeDecision": legal_actions_before_decision,
         "afterTichuDecisionState": after_tichu_decision,
         "awaitingAfterDecision": awaiting_after_decision,
         "legalActionsAfterDecision": legal_actions_after_decision,

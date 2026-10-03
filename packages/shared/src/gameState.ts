@@ -5,6 +5,7 @@ import { type Result, err, ok } from './result';
 
 export const NUM_PLAYERS = 4;
 export const PARTNER: Readonly<Record<number, number>> = { 0: 2, 1: 3, 2: 0, 3: 1 };
+export const DEFAULT_TARGET_SCORE = 1000;
 
 // String values match ai/tichu_env/state.py's Phase member *names*, for the
 // same golden-fixture-comparability reason as combinations.ts's ComboType.
@@ -40,8 +41,16 @@ export interface GameState {
   /** Whether each player has passed through the (small) Tichu call/decline
    * decision point yet -- needed because `tichuCalls` alone is bool, not
    * bool | null, so it can't distinguish "declined" from "hasn't been asked
-   * yet" the way `largeTichuCalls` can. See `isAwaitingTichuDecision`. */
+   * yet" the way `largeTichuCalls` can. See `isAwaitingTichuDecision`. Also
+   * set true by `decideLargeTichu` when a player calls Grand Tichu -- that
+   * supersedes the (small) Tichu decision, so they're never asked. */
   readonly tichuDecided: readonly boolean[];
+  /** Cumulative game score per team (indexed by `teamOf`) as of the start of
+   * this round, and the score at which a team wins the game. Mirrors
+   * `ai/tichu_env/state.py`'s `team_scores`/`target_score`: only the enclosing
+   * game loop changes these between rounds. */
+  readonly teamScores: readonly [number, number];
+  readonly targetScore: number;
 }
 
 export type Gifts = Record<number, Record<number, Card>>;
@@ -71,34 +80,22 @@ export function dealNewRound(deck: readonly Card[] = shuffledDeck()): GameState 
     mahjongWish: null,
     receivedFrom: Array.from({ length: NUM_PLAYERS }, () => ({})),
     tichuDecided: [false, false, false, false],
+    teamScores: [0, 0],
+    targetScore: DEFAULT_TARGET_SCORE,
   };
-}
-
-/** The lowest-numbered seat that has not yet decided on large Tichu, or
- * `null` once all four have. Used only by `encodeLegalActions` to sequence
- * the AI/self-play action space one seat at a time -- mirroring Python's
- * `_next_undecided_large_tichu_seat`, but derived statelessly from
- * `largeTichuCalls` rather than a persisted `currentPlayer` pointer, since
- * `decideLargeTichu` deliberately stays order-independent (real multiplayer
- * lets all four seats decide simultaneously; see that function's doc
- * comment). Ascending-seat order reproduces the exact same sequence Python's
- * pointer produces as long as decisions are made in that order, which the
- * self-play environment and `soloGame.ts` both do. */
-export function nextUndecidedLargeTichuSeat(largeTichuCalls: readonly (boolean | null)[]): number | null {
-  const seat = largeTichuCalls.findIndex((c) => c === null);
-  return seat === -1 ? null : seat;
 }
 
 /** Deliberately does NOT enforce `player === state.currentPlayer` (unlike
  * Python's `decide_large_tichu`, which does -- that's a self-play-only
- * simplification for sequencing the RL action space one seat at a time).
- * Real Tichu's grand-Tichu decision is simultaneous/order-independent, and
- * `packages/server`'s multiplayer room already relies on any of the four
- * seats being able to decide whenever their client sends the message --
- * adding turn enforcement here would force human players to wait through a
- * seat-order queue that the real game doesn't have. The AI/self-play-style
- * sequential view is instead reconstructed statelessly by
- * `nextUndecidedLargeTichuSeat`, used only by `encodeLegalActions`. */
+ * simplification for sequencing the RL action space one seat at a time, no
+ * longer applicable now that ai/tichu_env's `TichuEnv` auto-resolves this
+ * decision internally rather than exposing it as an RL action; see
+ * `TichuEnv._auto_resolve_calls`). Real Tichu's grand-Tichu decision is
+ * simultaneous/order-independent, and `packages/server`'s multiplayer room
+ * already relies on any of the four seats being able to decide whenever
+ * their client sends the message -- adding turn enforcement here would
+ * force human players to wait through a seat-order queue that the real game
+ * doesn't have. */
 export function decideLargeTichu(state: GameState, player: number, called: boolean): Result<GameState, string> {
   if (state.phase !== Phase.LargeTichu) {
     return err('large tichu can only be decided before the final 6 cards are dealt');
@@ -110,6 +107,18 @@ export function decideLargeTichu(state: GameState, player: number, called: boole
   const calls = [...state.largeTichuCalls];
   calls[player] = called;
   let next: GameState = { ...state, largeTichuCalls: calls };
+
+  if (called) {
+    // Calling Grand Tichu supersedes the (small) Tichu call -- the real
+    // rules never offer that separate decision to a player who already
+    // committed to the bigger bonus. Marking tichuDecided here keeps
+    // isAwaitingTichuDecision's own check simple and keeps this player's
+    // tichuCalls correctly false (they never actually called (small) Tichu,
+    // they called Grand Tichu).
+    const decided = [...next.tichuDecided];
+    decided[player] = true;
+    next = { ...next, tichuDecided: decided };
+  }
 
   if (calls.every((c) => c !== null)) {
     const newHands = state.hands.map((hand, i) => [...hand, ...state.pendingFinalCards[i]!]);

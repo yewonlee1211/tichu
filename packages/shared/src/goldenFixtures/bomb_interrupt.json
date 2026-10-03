@@ -1,8 +1,8 @@
 {
   "name": "bomb_interrupt",
   "description": "봄 인터럽트: 순서가 아닌 플레이어가 봄으로 트릭에 끼어듦",
-  "obsDim": 352,
-  "actionDim": 73,
+  "obsDim": 358,
+  "actionDim": 69,
   "beforeState": {
     "hands": [
       [
@@ -81,7 +81,12 @@
       false,
       false,
       false
-    ]
+    ],
+    "teamScores": [
+      0,
+      0
+    ],
+    "targetScore": 1000
   },
   "afterOpenState": {
     "hands": [
@@ -174,7 +179,12 @@
       false,
       false,
       false
-    ]
+    ],
+    "teamScores": [
+      0,
+      0
+    ],
+    "targetScore": 1000
   },
   "legalActionsForPlayer2BeforeBomb": [
     {
@@ -270,10 +280,6 @@
         0.0,
         0.2857142984867096,
         0.4375,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
         0.0,
         0.0
       ]
@@ -400,6 +406,11 @@
       false,
       false,
       false
-    ]
+    ],
+    "teamScores": [
+      0,
+      0
+    ],
+    "targetScore": 1000
   }
 }

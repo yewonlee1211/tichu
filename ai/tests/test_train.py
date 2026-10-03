@@ -11,7 +11,7 @@ import training.train as train_module
 from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 from training.opponent_pool import OpponentPool
-from training.self_play import HeuristicOpponentAdapter, HybridOpponent, PolicyOpponent, generate_self_play_games
+from training.self_play import HeuristicOpponentAdapter, PolicyOpponent, generate_self_play_games
 from training.train import (
     compute_ppo_loss,
     compute_reinforce_loss,
@@ -411,7 +411,7 @@ def test_train_forwards_its_opponent_straight_through_to_self_play(tmp_path: Pat
     seen_opponents = []
     real_generate = train_module.generate_self_play_games
 
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_binary_call=0.0):
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None):
         seen_opponents.append(opponent)
         return real_generate(
             network,
@@ -419,7 +419,6 @@ def test_train_forwards_its_opponent_straight_through_to_self_play(tmp_path: Pat
             rng=rng,
             opponent=opponent,
             opponent_factory=opponent_factory,
-            epsilon_binary_call=epsilon_binary_call,
         )
 
     monkeypatch.setattr(train_module, "generate_self_play_games", spy)
@@ -437,81 +436,6 @@ def test_train_forwards_its_opponent_straight_through_to_self_play(tmp_path: Pat
     )
 
     assert seen_opponents == [opponent, opponent]
-
-
-def test_train_forwards_epsilon_binary_call_straight_through_to_self_play(tmp_path: Path, monkeypatch):
-    seen_epsilons = []
-    real_generate = train_module.generate_self_play_games
-
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_binary_call=0.0):
-        seen_epsilons.append(epsilon_binary_call)
-        return real_generate(
-            network,
-            num_games,
-            rng=rng,
-            opponent=opponent,
-            opponent_factory=opponent_factory,
-            epsilon_binary_call=epsilon_binary_call,
-        )
-
-    monkeypatch.setattr(train_module, "generate_self_play_games", spy)
-
-    train(
-        _small_network(),
-        iterations=2,
-        games_per_iteration=2,
-        epsilon_binary_call=0.2,
-        rng=random.Random(15),
-        checkpoint_dir=tmp_path / "checkpoints",
-        checkpoint_every=100,
-        metrics_path=tmp_path / "metrics.csv",
-    )
-
-    assert seen_epsilons == [0.2, 0.2]
-
-
-def test_cli_epsilon_binary_call_flag_reaches_train(tmp_path: Path, monkeypatch):
-    seen_epsilons = []
-    real_generate = train_module.generate_self_play_games
-
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_binary_call=0.0):
-        seen_epsilons.append(epsilon_binary_call)
-        return real_generate(
-            network,
-            num_games,
-            rng=rng,
-            opponent=opponent,
-            opponent_factory=opponent_factory,
-            epsilon_binary_call=epsilon_binary_call,
-        )
-
-    monkeypatch.setattr(train_module, "generate_self_play_games", spy)
-    checkpoint_dir = tmp_path / "checkpoints"
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "train.py",
-            "--iterations",
-            "1",
-            "--games-per-iteration",
-            "2",
-            "--checkpoint-dir",
-            str(checkpoint_dir),
-            "--checkpoint-every",
-            "1",
-            "--metrics-path",
-            str(checkpoint_dir / "metrics.csv"),
-            "--seed",
-            "16",
-            "--epsilon-binary-call",
-            "0.2",
-        ],
-    )
-
-    train_module._main()
-
-    assert seen_epsilons == [0.2]
 
 
 def test_train_runs_to_completion_against_a_fixed_heuristic_opponent(tmp_path: Path):
@@ -555,110 +479,6 @@ def test_cli_heuristic_opponent_flag_wires_in_the_advanced_heuristic_agent(tmp_p
     train_module._main()
 
     assert (checkpoint_dir / "checkpoint_1.pt").exists()
-
-
-def test_cli_hybrid_opponent_checkpoint_flag_wires_in_a_hybrid_opponent(tmp_path: Path, monkeypatch):
-    seed_dir = tmp_path / "seed_ckpt"
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "train.py",
-            "--iterations",
-            "1",
-            "--games-per-iteration",
-            "2",
-            "--checkpoint-dir",
-            str(seed_dir),
-            "--checkpoint-every",
-            "1",
-            "--metrics-path",
-            str(seed_dir / "metrics.csv"),
-            "--seed",
-            "21",
-        ],
-    )
-    train_module._main()
-    seed_checkpoint = seed_dir / "checkpoint_1.pt"
-
-    seen_opponents = []
-    real_generate = train_module.generate_self_play_games
-
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_binary_call=0.0):
-        seen_opponents.append(opponent)
-        return real_generate(
-            network,
-            num_games,
-            rng=rng,
-            opponent=opponent,
-            opponent_factory=opponent_factory,
-            epsilon_binary_call=epsilon_binary_call,
-        )
-
-    monkeypatch.setattr(train_module, "generate_self_play_games", spy)
-    checkpoint_dir = tmp_path / "checkpoints"
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "train.py",
-            "--iterations",
-            "1",
-            "--games-per-iteration",
-            "2",
-            "--checkpoint-dir",
-            str(checkpoint_dir),
-            "--checkpoint-every",
-            "1",
-            "--metrics-path",
-            str(checkpoint_dir / "metrics.csv"),
-            "--seed",
-            "22",
-            "--hybrid-opponent-checkpoint",
-            str(seed_checkpoint),
-        ],
-    )
-
-    train_module._main()
-
-    assert (checkpoint_dir / "checkpoint_1.pt").exists()
-    assert all(isinstance(opponent, HybridOpponent) for opponent in seen_opponents)
-
-
-def test_cli_rejects_combining_hybrid_opponent_checkpoint_with_heuristic_opponent(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "train.py",
-            "--iterations",
-            "1",
-            "--heuristic-opponent",
-            "--hybrid-opponent-checkpoint",
-            str(tmp_path / "checkpoint_1.pt"),
-        ],
-    )
-
-    with pytest.raises(SystemExit):
-        train_module._main()
-
-
-def test_cli_rejects_combining_hybrid_opponent_checkpoint_with_opponent_pool(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "train.py",
-            "--iterations",
-            "1",
-            "--opponent-pool",
-            "--hybrid-opponent-checkpoint",
-            str(tmp_path / "checkpoint_1.pt"),
-        ],
-    )
-
-    with pytest.raises(SystemExit):
-        train_module._main()
 
 
 def test_train_saves_a_training_state_file_at_the_configured_checkpoint_interval(tmp_path: Path):
@@ -1137,7 +957,7 @@ def test_train_forwards_an_opponent_factory_when_opponent_pool_is_set(tmp_path: 
     seen_factories = []
     real_generate = train_module.generate_self_play_games
 
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, epsilon_binary_call=0.0):
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None):
         seen_factories.append(opponent_factory)
         return real_generate(
             network,
@@ -1145,7 +965,6 @@ def test_train_forwards_an_opponent_factory_when_opponent_pool_is_set(tmp_path: 
             rng=rng,
             opponent=opponent,
             opponent_factory=opponent_factory,
-            epsilon_binary_call=epsilon_binary_call,
         )
 
     monkeypatch.setattr(train_module, "generate_self_play_games", spy)

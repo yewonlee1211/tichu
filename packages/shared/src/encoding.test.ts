@@ -90,7 +90,7 @@ describe('golden fixtures: tichu call decision', () => {
     expect(ACTION_DIM).toBe(tichuCallDecisionFixture.actionDim);
   });
 
-  it('encodes the two-bit called/declined large-Tichu calls after a True/False/True/False sequence', () => {
+  it('encodes each seat\'s 4-category Tichu status after a False/True/True/False Grand Tichu sequence', () => {
     const state = stateFromFixture(tichuCallDecisionFixture.afterLargeTichuState as never);
 
     const observation = encodeObservation(state, 0);
@@ -98,21 +98,28 @@ describe('golden fixtures: tichu call decision', () => {
     expect(observation).toEqual(tichuCallDecisionFixture.observationAfterLargeTichu);
   });
 
-  it('offers the (small) Tichu call/decline choice to the leader before their first play', () => {
+  it('throws for the leader before their (small) Tichu decision is resolved', () => {
+    // Large-Tichu and (small) Tichu call decisions are no longer part of the
+    // action space -- both are auto-resolved internally (by TichuEnv on the
+    // Python side, by soloGame.ts's shouldCallLargeTichu/shouldCallTichu
+    // here) before this function is ever called. See encodeLegalActions's
+    // doc comment.
     const state = stateFromFixture(tichuCallDecisionFixture.afterExchangeState as never);
 
-    const actions = encodeLegalActions(state, tichuCallDecisionFixture.leader);
-
-    expect(actions).toEqual(legalActionsFromFixture(tichuCallDecisionFixture.legalActionsBeforeDecision));
+    expect(() => encodeLegalActions(state, tichuCallDecisionFixture.leader)).toThrow();
   });
 
-  it('offers no legal actions to a player other than the one currently deciding', () => {
+  it('throws for a player other than the one currently deciding too', () => {
     const state = stateFromFixture(tichuCallDecisionFixture.afterExchangeState as never);
-    const other = (tichuCallDecisionFixture.leader + 1) % 4;
+    // Must also have declined Grand Tichu -- a seat that called Grand Tichu
+    // has its (small) Tichu decision auto-resolved (see gameState.ts's
+    // "Grand Tichu supersedes (small) Tichu" rule), so encodeLegalActions
+    // would no longer throw for them either.
+    const other = tichuCallDecisionFixture.afterLargeTichuState.largeTichuCalls.findIndex(
+      (called, seat) => called === false && seat !== tichuCallDecisionFixture.leader,
+    );
 
-    const actions = encodeLegalActions(state, other);
-
-    expect(actions).toEqual(legalActionsFromFixture(tichuCallDecisionFixture.legalActionsForOtherBeforeDecision));
+    expect(() => encodeLegalActions(state, other)).toThrow();
   });
 
   it('returns to ordinary trick-play candidates once the leader has decided', () => {

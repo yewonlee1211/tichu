@@ -6,6 +6,7 @@ import numpy as np
 
 from tichu_env.cards import Card, Rank, create_deck
 from tichu_env.combinations import Combo, ComboType
+from tichu_env.scoring import TEAM_OF
 from tichu_env.state import NUM_PLAYERS, GameState, Phase, is_awaiting_tichu_decision, legal_combos
 
 CARD_ORDER: tuple[Card, ...] = create_deck()
@@ -40,11 +41,22 @@ _CURRENT_BEST_DIM = 1 + NUM_COMBO_TYPES + 2  # has_current_best, combo_type, len
 _CURRENT_PLAYER_DIM = NUM_PLAYERS
 _TRICK_LEADER_DIM = NUM_PLAYERS
 _LAST_PLAYER_DIM = 1 + NUM_PLAYERS  # has_last_player, relative seat
-_TICHU_CALLS_DIM = NUM_PLAYERS
-# Per seat: [called, declined] -- both zero means "hasn't decided yet" (the
-# large_tichu_calls field is bool | None). Collapsing undecided and declined
-# to the same value would hide real information during the LARGE_TICHU phase.
-_LARGE_TICHU_CALLS_DIM = 2 * NUM_PLAYERS
+# Per seat, a one-hot over the 4 mutually exclusive Tichu-call states:
+# [undecided, declined_both, called_tichu, called_grand_tichu]. Grand Tichu
+# supersedes the (small) Tichu decision (see state.decide_large_tichu), so
+# these never overlap -- a single categorical block is enough, replacing what
+# used to be two separate scalar/2-bit blocks (Tichu-only, Grand-Tichu-only).
+_TICHU_STATUS_UNDECIDED = 0
+_TICHU_STATUS_DECLINED = 1
+_TICHU_STATUS_TICHU = 2
+_TICHU_STATUS_GRAND_TICHU = 3
+_NUM_TICHU_STATUSES = 4
+_TICHU_STATUS_DIM = _NUM_TICHU_STATUSES * NUM_PLAYERS
+# [own team, opposing team], each (target_score - team_score) / target_score.
+# Normalized by the target so a 500-, 700-, or 3000-point game reads on the
+# same scale. Not clipped: a team can be negative (a failed Grand Tichu costs
+# 200), which makes its remaining distance exceed 1.0.
+_REMAINING_TO_WIN_DIM = 2
 _MAHJONG_WISH_DIM = 1 + NUM_RANKS  # no_wish, wished rank
 _FINISHED_DIM = NUM_PLAYERS
 _PHASE_DIM = NUM_PHASES
@@ -62,8 +74,8 @@ OBS_DIM = (
     + _CURRENT_PLAYER_DIM
     + _TRICK_LEADER_DIM
     + _LAST_PLAYER_DIM
-    + _TICHU_CALLS_DIM
-    + _LARGE_TICHU_CALLS_DIM
+    + _TICHU_STATUS_DIM
+    + _REMAINING_TO_WIN_DIM
     + _MAHJONG_WISH_DIM
     + _FINISHED_DIM
     + _PHASE_DIM
@@ -72,15 +84,14 @@ OBS_DIM = (
 )
 
 # --- Action layout -----------------------------------------------------------
-# cards used, combo type, length, rank strength, is_lone_phoenix,
-# is_large_tichu_call, is_large_tichu_decline, is_tichu_call, is_tichu_decline,
-# is_pass (kept last so it stays addressable as vec[-1], matching every
-# existing PASS-detection call site).
-_LARGE_TICHU_CALL_OFFSET = 3
-_LARGE_TICHU_DECLINE_OFFSET = 4
-_TICHU_CALL_OFFSET = 5
-_TICHU_DECLINE_OFFSET = 6
-ACTION_DIM = NUM_CARDS + NUM_COMBO_TYPES + 8
+# cards used, combo type, length, rank strength, is_lone_phoenix, is_pass
+# (kept last so it stays addressable as vec[-1], matching every existing
+# PASS-detection call site). Large-Tichu and (small) Tichu call/decline used
+# to occupy 4 more offsets here as RL pseudo-actions; they are now auto-
+# resolved by TichuEnv via a fixed heuristic instead (see its class
+# docstring and .claude/plans/tichu-m2-action-space-curriculum.plan.md), so
+# this action space covers trick play only.
+ACTION_DIM = NUM_CARDS + NUM_COMBO_TYPES + 4
 
 
 def encode_observation(state: GameState, player: int) -> np.ndarray:
@@ -99,8 +110,8 @@ def encode_observation(state: GameState, player: int) -> np.ndarray:
         _relative_seat_onehot(state.current_player, player),
         _relative_seat_onehot(state.trick_leader, player),
         _encode_optional_seat(state.last_player_to_act, player),
-        np.array([1.0 if state.tichu_calls[seat_of(o)] else 0.0 for o in relative_seats()], dtype=np.float32),
-        _encode_large_tichu_calls(state.large_tichu_calls, player),
+        _encode_tichu_status(state, player),
+        _encode_remaining_to_win(state, player),
         _encode_mahjong_wish(state.mahjong_wish),
         np.array([1.0 if seat_of(o) in state.finished_order else 0.0 for o in relative_seats()], dtype=np.float32),
         _encode_phase(state.phase),
@@ -125,56 +136,27 @@ def encode_action(combo: Combo | None) -> np.ndarray:
     return vec
 
 
-def encode_large_tichu_action(called: bool) -> np.ndarray:
-    """Encode the large-Tichu call/decline pseudo-action offered once per
-    player before the final 6 cards are dealt (see `Phase.LARGE_TICHU`).
-    Carries no card information -- just a flag bit, the same pattern PASS
-    already uses."""
-    vec = np.zeros(ACTION_DIM, dtype=np.float32)
-    offset = _LARGE_TICHU_CALL_OFFSET if called else _LARGE_TICHU_DECLINE_OFFSET
-    vec[NUM_CARDS + NUM_COMBO_TYPES + offset] = 1.0
-    return vec
+def encode_legal_actions(state: GameState, player: int) -> list[tuple[Combo | None, np.ndarray]]:
+    """All legal trick-play candidate actions for `player` right now, each
+    paired with its encoded vector.
 
+    The large-Tichu and (small) Tichu call/decline decisions are no longer
+    part of the RL action space: `TichuEnv` auto-resolves both internally via
+    a fixed heuristic before ever exposing a state to a caller (see
+    `TichuEnv._auto_resolve_calls`), so this function assumes `state` is
+    already past both -- and raises rather than silently returning nonsense
+    from `legal_combos` on a state it was never designed for -- but still
+    accepts `Phase.ROUND_OVER` (the terminal state `TichuEnv._observe_current`
+    still builds a `StepResult` for, expecting an empty/trivial action list).
 
-def encode_tichu_action(called: bool) -> np.ndarray:
-    """Encode the (small) Tichu call/decline pseudo-action offered once per
-    player right before their first trick-play action (see
-    `state.is_awaiting_tichu_decision`). Same flag-bit pattern as
-    `encode_large_tichu_action`, in its own disjoint pair of offsets so the
-    network can tell the two decisions apart."""
-    vec = np.zeros(ACTION_DIM, dtype=np.float32)
-    offset = _TICHU_CALL_OFFSET if called else _TICHU_DECLINE_OFFSET
-    vec[NUM_CARDS + NUM_COMBO_TYPES + offset] = 1.0
-    return vec
-
-
-def encode_legal_actions(state: GameState, player: int) -> list[tuple[Combo | bool | None, np.ndarray]]:
-    """All legal candidate actions for `player` right now, each paired with its
-    encoded vector.
-
-    During `Phase.LARGE_TICHU`, the only decision is call (`True`) or decline
-    (`False`) large Tichu, offered exactly once per player and only once it is
-    that player's turn to decide (see `state.decide_large_tichu`'s
-    `current_player` bookkeeping) -- everyone else sees no legal actions yet.
-
-    Once playing has started, a player who hasn't yet decided on the (small)
-    Tichu call and still holds their full 14-card hand sees the same kind of
-    call/decline choice instead of trick-play candidates, gated the same way
-    (only once it is their turn -- see `state.is_awaiting_tichu_decision`).
-
-    Otherwise (ordinary trick play), PASS (`None`) is included only when it is
-    actually `player`'s turn and there is a current trick to pass on (you
-    cannot pass while leading, and a non-turn player may only interrupt with
-    a bomb, never pass)."""
-    if state.phase is Phase.LARGE_TICHU:
-        if player != state.current_player:
-            return []
-        return [(True, encode_large_tichu_action(True)), (False, encode_large_tichu_action(False))]
-
-    if is_awaiting_tichu_decision(state, player):
-        if player != state.current_player:
-            return []
-        return [(True, encode_tichu_action(True)), (False, encode_tichu_action(False))]
+    PASS (`None`) is included only when it is actually `player`'s turn and
+    there is a current trick to pass on (you cannot pass while leading, and
+    a non-turn player may only interrupt with a bomb, never pass)."""
+    if state.phase is Phase.LARGE_TICHU or is_awaiting_tichu_decision(state, player):
+        raise ValueError(
+            "encode_legal_actions expects a state past all call decisions -- "
+            "large-Tichu and Tichu calls are auto-resolved by TichuEnv, not exposed as legal actions"
+        )
 
     candidates: list[Combo | None] = list(legal_combos(state, player))
     if state.current_best is not None and player == state.current_player:
@@ -215,15 +197,42 @@ def _encode_current_best(combo: Combo | None, strength: float) -> np.ndarray:
     return vec
 
 
-def _encode_large_tichu_calls(calls: Sequence[bool | None], perspective: int) -> np.ndarray:
-    vec = np.zeros(_LARGE_TICHU_CALLS_DIM, dtype=np.float32)
+def _encode_tichu_status(state: GameState, perspective: int) -> np.ndarray:
+    vec = np.zeros(_TICHU_STATUS_DIM, dtype=np.float32)
     for offset in range(NUM_PLAYERS):
-        call = calls[(perspective + offset) % NUM_PLAYERS]
-        if call is True:
-            vec[2 * offset] = 1.0
-        elif call is False:
-            vec[2 * offset + 1] = 1.0
+        seat = (perspective + offset) % NUM_PLAYERS
+        status = _tichu_status(state, seat)
+        vec[_NUM_TICHU_STATUSES * offset + status] = 1.0
     return vec
+
+
+def _encode_remaining_to_win(state: GameState, perspective: int) -> np.ndarray:
+    own_team = TEAM_OF[perspective]
+    target = float(state.target_score)
+    return np.array(
+        [
+            (target - state.team_scores[own_team]) / target,
+            (target - state.team_scores[1 - own_team]) / target,
+        ],
+        dtype=np.float32,
+    )
+
+
+def _tichu_status(state: GameState, seat: int) -> int:
+    """One of the 4 `_TICHU_STATUS_*` categories for `seat`, derived from
+    `large_tichu_calls`/`tichu_decided`/`tichu_calls` (see their field
+    comments on `GameState`). Calling Grand Tichu (`large_tichu_calls[seat]
+    is True`) always means `tichu_calls[seat]` is still False -- `seat` never
+    actually reaches the (small) Tichu decision, since decide_large_tichu
+    marks tichu_decided True for them at the same time they call it."""
+    large_tichu = state.large_tichu_calls[seat]
+    if large_tichu is None:
+        return _TICHU_STATUS_UNDECIDED
+    if large_tichu is True:
+        return _TICHU_STATUS_GRAND_TICHU
+    if not state.tichu_decided[seat]:
+        return _TICHU_STATUS_UNDECIDED
+    return _TICHU_STATUS_TICHU if state.tichu_calls[seat] else _TICHU_STATUS_DECLINED
 
 
 def _encode_phase(phase: Phase) -> np.ndarray:

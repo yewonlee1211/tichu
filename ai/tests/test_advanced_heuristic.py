@@ -2,7 +2,7 @@ import random
 
 from tichu_env.cards import Card, Rank, Suit
 from tichu_env.combinations import identify_combo
-from tichu_env.encoding import encode_action, encode_large_tichu_action, encode_tichu_action
+from tichu_env.encoding import encode_action
 from tichu_env.env import TichuEnv
 from tichu_env.state import NUM_PLAYERS, GameState, Phase
 
@@ -49,9 +49,12 @@ def make_playing_state(hands: dict[int, list[Card]] | None = None, **overrides) 
 
 # ---------------------------------------------------------------------------
 # Large Tichu decision
+#
+# These call `should_call_large_tichu`/`should_call_tichu` directly rather
+# than through `choose_action` -- `TichuEnv` calls them the same way (see
+# TichuEnv._auto_resolve_calls); `choose_action` itself no longer dispatches
+# on these decisions since `legal_actions` never contains them anymore.
 # ---------------------------------------------------------------------------
-
-_LARGE_TICHU_LEGAL_ACTIONS = [(True, encode_large_tichu_action(True)), (False, encode_large_tichu_action(False))]
 
 
 def test_advanced_heuristic_calls_large_tichu_with_a_strong_hand():
@@ -65,12 +68,9 @@ def test_advanced_heuristic_calls_large_tichu_with_a_strong_hand():
         card(Rank.FOUR),
         card(Rank.FIVE),
     ]
-    state = make_playing_state(hands={0: strong_hand}, phase=Phase.LARGE_TICHU, current_player=0)
     agent = AdvancedHeuristicAgent()
 
-    chosen = agent.choose_action(state, _LARGE_TICHU_LEGAL_ACTIONS)
-
-    assert chosen is True
+    assert agent.should_call_large_tichu(tuple(strong_hand)) is True
 
 
 def test_advanced_heuristic_declines_large_tichu_with_a_weak_hand():
@@ -84,12 +84,9 @@ def test_advanced_heuristic_declines_large_tichu_with_a_weak_hand():
         card(Rank.EIGHT),
         card(Rank.NINE),
     ]
-    state = make_playing_state(hands={0: weak_hand}, phase=Phase.LARGE_TICHU, current_player=0)
     agent = AdvancedHeuristicAgent()
 
-    chosen = agent.choose_action(state, _LARGE_TICHU_LEGAL_ACTIONS)
-
-    assert chosen is False
+    assert agent.should_call_large_tichu(tuple(weak_hand)) is False
 
 
 def test_advanced_heuristic_calls_large_tichu_with_two_aces_even_if_otherwise_weak():
@@ -103,12 +100,9 @@ def test_advanced_heuristic_calls_large_tichu_with_two_aces_even_if_otherwise_we
         card(Rank.SIX),
         card(Rank.SEVEN),
     ]
-    state = make_playing_state(hands={0: hand_with_two_aces}, phase=Phase.LARGE_TICHU, current_player=0)
     agent = AdvancedHeuristicAgent()
 
-    chosen = agent.choose_action(state, _LARGE_TICHU_LEGAL_ACTIONS)
-
-    assert chosen is True
+    assert agent.should_call_large_tichu(tuple(hand_with_two_aces)) is True
 
 
 def test_advanced_heuristic_declines_large_tichu_with_only_one_ace_despite_other_high_cards():
@@ -122,19 +116,14 @@ def test_advanced_heuristic_declines_large_tichu_with_only_one_ace_despite_other
         card(Rank.FOUR),
         card(Rank.FIVE),
     ]
-    state = make_playing_state(hands={0: hand_with_one_ace}, phase=Phase.LARGE_TICHU, current_player=0)
     agent = AdvancedHeuristicAgent()
 
-    chosen = agent.choose_action(state, _LARGE_TICHU_LEGAL_ACTIONS)
-
-    assert chosen is False
+    assert agent.should_call_large_tichu(tuple(hand_with_one_ace)) is False
 
 
 # ---------------------------------------------------------------------------
 # (Small) Tichu call decision
 # ---------------------------------------------------------------------------
-
-_TICHU_LEGAL_ACTIONS = [(True, encode_tichu_action(True)), (False, encode_tichu_action(False))]
 
 
 def _pad_to_14(cards: list[Card]) -> list[Card]:
@@ -148,55 +137,42 @@ def _pad_to_14(cards: list[Card]) -> list[Card]:
 
 def test_advanced_heuristic_calls_tichu_with_two_aces_and_the_dragon():
     hand = _pad_to_14([card(Rank.ACE, Suit.SWORD), card(Rank.ACE, Suit.PAGODA), special(Rank.DRAGON)])
-    state = make_playing_state(hands={0: hand}, current_player=0)
     agent = AdvancedHeuristicAgent()
 
-    chosen = agent.choose_action(state, _TICHU_LEGAL_ACTIONS)
-
-    assert chosen is True
+    assert agent.should_call_tichu(tuple(hand)) is True
 
 
 def test_advanced_heuristic_calls_tichu_with_two_aces_and_the_phoenix():
     hand = _pad_to_14([card(Rank.ACE, Suit.SWORD), card(Rank.ACE, Suit.PAGODA), special(Rank.PHOENIX)])
-    state = make_playing_state(hands={0: hand}, current_player=0)
     agent = AdvancedHeuristicAgent()
 
-    chosen = agent.choose_action(state, _TICHU_LEGAL_ACTIONS)
-
-    assert chosen is True
+    assert agent.should_call_tichu(tuple(hand)) is True
 
 
 def test_advanced_heuristic_declines_tichu_with_two_aces_but_no_special_card():
     hand = _pad_to_14([card(Rank.ACE, Suit.SWORD), card(Rank.ACE, Suit.PAGODA)])
-    state = make_playing_state(hands={0: hand}, current_player=0)
     agent = AdvancedHeuristicAgent()
 
-    chosen = agent.choose_action(state, _TICHU_LEGAL_ACTIONS)
-
-    assert chosen is False
+    assert agent.should_call_tichu(tuple(hand)) is False
 
 
 def test_advanced_heuristic_declines_tichu_with_only_one_ace_despite_the_dragon():
     hand = _pad_to_14([card(Rank.ACE, Suit.SWORD), special(Rank.DRAGON)])
-    state = make_playing_state(hands={0: hand}, current_player=0)
     agent = AdvancedHeuristicAgent()
 
-    chosen = agent.choose_action(state, _TICHU_LEGAL_ACTIONS)
-
-    assert chosen is False
+    assert agent.should_call_tichu(tuple(hand)) is False
 
 
 def test_advanced_heuristic_tichu_call_uses_its_own_rule_not_the_large_tichu_rule():
     # 2 aces and no Dragon/Phoenix: enough to call large Tichu (its rule is
     # just aces >= 2) but not enough for the (small) Tichu decision, which
     # additionally requires a Dragon or Phoenix -- this pins down that
-    # `choose_action` actually dispatches to `_should_call_tichu` here rather
-    # than accidentally reusing `_should_call_large_tichu`.
+    # `should_call_tichu` has its own, slightly stricter gate rather than
+    # accidentally reusing `should_call_large_tichu`'s.
     hand = _pad_to_14([card(Rank.ACE, Suit.SWORD), card(Rank.ACE, Suit.PAGODA)])
-    state = make_playing_state(hands={0: hand}, current_player=0)
     agent = AdvancedHeuristicAgent()
 
-    assert agent.choose_action(state, _TICHU_LEGAL_ACTIONS) is False
+    assert agent.should_call_tichu(tuple(hand)) is False
 
 
 # ---------------------------------------------------------------------------

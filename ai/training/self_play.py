@@ -15,44 +15,9 @@ from tichu_env.env import TichuEnv
 from tichu_env.scoring import TEAM_OF
 from tichu_env.state import NUM_PLAYERS, GameState
 
-from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
 
 LegalAction = tuple[Combo | None, np.ndarray]
-
-DEFAULT_EPSILON_BINARY_CALL = 0.0
-
-
-def _is_binary_call_decision(combos: list) -> bool:
-    """True iff this decision point is a large-Tichu or (small) Tichu
-    call/decline choice -- both always offer exactly the two `bool`
-    pseudo-actions `True`/`False`, distinguishable from every other decision
-    (`Combo` or `None`) at a glance. The two decisions are indistinguishable
-    at this generic level, which is what lets one epsilon mechanism cover
-    both without change (see `_sample_action_index`)."""
-    return len(combos) == 2 and all(isinstance(combo, bool) for combo in combos)
-
-
-def _sample_action_index(
-    combos: list,
-    probs: np.ndarray,
-    rng: random.Random,
-    epsilon_binary_call: float,
-) -> int:
-    """Picks which of `combos` to play. Ordinarily samples from the policy's
-    own `probs`; but for a large-Tichu or (small) Tichu call/decline decision
-    specifically, forces a uniform-random choice with probability
-    `epsilon_binary_call`. Only ever calling on the best hands makes this a
-    rare binary decision that entropy regularization alone can't teach the
-    network to condition on hand strength -- real sampling probability on a
-    "call" logit stays too low for policy gradients to ever see enough call
-    outcomes to learn from. Trick-play decisions are left untouched: they
-    already get plenty of exploration from entropy regularization, and
-    forcing a uniform choice among dozens of legal combos would be far more
-    disruptive than helpful."""
-    if _is_binary_call_decision(combos) and rng.random() < epsilon_binary_call:
-        return rng.randrange(len(combos))
-    return rng.choices(range(len(combos)), weights=probs.tolist(), k=1)[0]
 
 
 class HeuristicOpponentAdapter:
@@ -92,35 +57,6 @@ class PolicyOpponent:
         return combos[chosen_index]
 
 
-class HybridOpponent:
-    """Adapts a frozen `TichuPolicyValueNet` for trick play (delegating to a
-    `PolicyOpponent` internally, so it samples identically) combined with
-    `AdvancedHeuristicAgent`'s hand-strength rules for the large-Tichu and
-    (small) Tichu call/decline decisions.
-
-    Motivation: the trainee's own large-Tichu/Tichu-call policy has
-    collapsed to always-decline regardless of hand strength (see
-    .claude/plans/tichu-m2-action-space-curriculum.plan.md's "5단계와의
-    연결"), so mirroring the trainee's own current weights for an opponent
-    gives it essentially no exposure to an opponent whose calls actually
-    correlate with hand quality. A plain `AdvancedHeuristicAgent` opponent
-    fixes that but trades down to a much weaker, simple-greedy trick-play
-    style. `HybridOpponent` keeps a specific checkpoint's trick-play
-    strength while swapping in the heuristic's hand-quality-correlated
-    calls, so team0 gets both a strong trick-play sparring partner and a
-    realistic "opponent called Tichu with a good hand" signal to condition
-    on."""
-
-    def __init__(self, network: TichuPolicyValueNet, rng: random.Random):
-        self._policy_opponent = PolicyOpponent(network, rng)
-        self._heuristic = AdvancedHeuristicAgent()
-
-    def choose_action(self, state: GameState, legal_actions: list[LegalAction]) -> Combo | bool | None:
-        if any(isinstance(action, bool) for action, _ in legal_actions):
-            return self._heuristic.choose_action(state, legal_actions)
-        return self._policy_opponent.choose_action(state, legal_actions)
-
-
 @dataclass(frozen=True)
 class Transition:
     """One trick-play decision by one player. `reward` is 0.0 on every
@@ -139,7 +75,6 @@ def play_self_play_round(
     network: TichuPolicyValueNet,
     rng: random.Random,
     opponent: object | None = None,
-    epsilon_binary_call: float = DEFAULT_EPSILON_BINARY_CALL,
 ) -> list[list[Transition]]:
     """Plays one full round with `network` seated at team0 (seats 0, 2) and
     returns one trajectory per player: every trick-play decision that seat
@@ -156,11 +91,7 @@ def play_self_play_round(
     Each network turn's offered legal actions are scored into a probability
     distribution and one is sampled -- self-play data generation needs
     exploration, not the best move, so this always samples rather than taking
-    the argmax. `epsilon_binary_call` additionally forces a uniform-random
-    call/decline choice on the large-Tichu and (small) Tichu decisions
-    specifically, with that probability (see `_sample_action_index`); left at
-    its default of 0.0, behavior is unchanged from before this parameter
-    existed.
+    the argmax.
 
     The round's final reward (own team's `score_round` delta minus the
     opposing team's) is written onto the *last* transition of each player
@@ -185,7 +116,7 @@ def play_self_play_round(
                     torch.as_tensor(result.observation, dtype=torch.float32),
                     torch.as_tensor(action_vectors, dtype=torch.float32),
                 ).numpy()
-            chosen_index = _sample_action_index(combos, probs, rng, epsilon_binary_call)
+            chosen_index = rng.choices(range(len(combos)), weights=probs.tolist(), k=1)[0]
 
             per_player[player].append(
                 Transition(
@@ -219,7 +150,6 @@ def generate_self_play_games(
     rng: random.Random | None = None,
     opponent: object | None = None,
     opponent_factory: Callable[[], object | None] | None = None,
-    epsilon_binary_call: float = DEFAULT_EPSILON_BINARY_CALL,
 ) -> list[list[Transition]]:
     """Runs `num_games` self-play rounds and returns a flat list of
     per-player trajectories -- 4 per game, one per seat (some empty when
@@ -228,17 +158,12 @@ def generate_self_play_games(
     `opponent_factory`, if set, is called once per game to pick that game's
     team1 opponent afresh (e.g. a random draw from an `OpponentPool` mixed
     with heuristic agents) -- it takes precedence over the single, fixed
-    `opponent` for every game where it's set.
-
-    `epsilon_binary_call` is forwarded to `play_self_play_round` unchanged --
-    see there for what it does."""
+    `opponent` for every game where it's set."""
     rng = rng if rng is not None else random.Random()
     episodes: list[list[Transition]] = []
     for _ in range(num_games):
         game_opponent = opponent_factory() if opponent_factory is not None else opponent
-        episodes.extend(
-            play_self_play_round(network, rng, opponent=game_opponent, epsilon_binary_call=epsilon_binary_call)
-        )
+        episodes.extend(play_self_play_round(network, rng, opponent=game_opponent))
     return episodes
 
 
@@ -257,7 +182,6 @@ def _run_self_play_worker(
     seed: int,
     opponent: object | None,
     opponent_factory: Callable[[], object | None] | None,
-    epsilon_binary_call: float,
     result_queue: MPQueue,
 ) -> None:
     """Entry point for one self-play worker process (see
@@ -279,7 +203,6 @@ def _run_self_play_worker(
             rng=random.Random(seed),
             opponent=opponent,
             opponent_factory=opponent_factory,
-            epsilon_binary_call=epsilon_binary_call,
         )
         result_queue.put(("ok", episodes))
     except Exception as exc:  # noqa: BLE001 -- re-raised in the parent process via the queue
@@ -293,7 +216,6 @@ def generate_self_play_games_parallel(
     rng: random.Random | None = None,
     opponent: object | None = None,
     opponent_factory: Callable[[], object | None] | None = None,
-    epsilon_binary_call: float = DEFAULT_EPSILON_BINARY_CALL,
 ) -> list[list[Transition]]:
     """Process-parallel counterpart to `generate_self_play_games`: splits
     `num_games` across up to `num_workers` subprocesses (each running the
@@ -334,7 +256,6 @@ def generate_self_play_games_parallel(
             rng=rng,
             opponent=opponent,
             opponent_factory=opponent_factory,
-            epsilon_binary_call=epsilon_binary_call,
         )
 
     game_counts = _split_game_counts(num_games, effective_workers)
@@ -345,7 +266,7 @@ def generate_self_play_games_parallel(
     processes = [
         ctx.Process(
             target=_run_self_play_worker,
-            args=(network, count, seed, opponent, opponent_factory, epsilon_binary_call, result_queue),
+            args=(network, count, seed, opponent, opponent_factory, result_queue),
         )
         for count, seed in zip(game_counts, seeds)
     ]

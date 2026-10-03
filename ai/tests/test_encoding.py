@@ -6,15 +6,23 @@ from tichu_env.combinations import ComboType, identify_combo
 from tichu_env.encoding import (
     ACTION_DIM,
     CARD_INDEX,
+    NUM_CARDS,
     OBS_DIM,
+    _CURRENT_BEST_DIM,
     _EXCHANGE_RECEIVED_DIM,
+    _LAST_PLAYER_DIM,
+    _NUM_TICHU_STATUSES,
     _PASSES_DIM,
     _PHASE_DIM,
+    _REMAINING_TO_WIN_DIM,
+    _TICHU_STATUS_DECLINED,
+    _TICHU_STATUS_DIM,
+    _TICHU_STATUS_GRAND_TICHU,
+    _TICHU_STATUS_TICHU,
+    _TICHU_STATUS_UNDECIDED,
     encode_action,
-    encode_large_tichu_action,
     encode_legal_actions,
     encode_observation,
-    encode_tichu_action,
 )
 from tichu_env.state import NUM_PLAYERS, GameState, Phase
 
@@ -161,6 +169,135 @@ def test_encode_observation_distinguishes_undecided_from_declined_large_tichu():
     assert not np.array_equal(obs_undecided, obs_declined)
 
 
+_TICHU_STATUS_START = (
+    NUM_CARDS  # own hand
+    + NUM_CARDS  # trick cards
+    + NUM_PLAYERS  # collected points
+    + NUM_PLAYERS  # hand sizes
+    + _CURRENT_BEST_DIM
+    + NUM_PLAYERS  # current player
+    + NUM_PLAYERS  # trick leader
+    + _LAST_PLAYER_DIM
+)
+
+
+def _tichu_status_block(obs: np.ndarray) -> np.ndarray:
+    return obs[_TICHU_STATUS_START : _TICHU_STATUS_START + _TICHU_STATUS_DIM]
+
+
+def test_encode_observation_tichu_status_is_one_hot_per_seat_from_own_perspective():
+    # seat0 (self): undecided, seat1: declined both, seat2: called tichu,
+    # seat3: called grand tichu -- one of every category, exercised from
+    # player 0's own perspective so relative offset == seat number.
+    state = make_state(
+        {0: [card(Rank.FIVE)]},
+        large_tichu_calls=(None, False, False, True),
+        tichu_decided=(False, True, True, True),
+        tichu_calls=(False, False, True, False),
+    )
+
+    block = _tichu_status_block(encode_observation(state, player=0))
+
+    expected = np.zeros(_TICHU_STATUS_DIM, dtype=np.float32)
+    expected[0 * _NUM_TICHU_STATUSES + _TICHU_STATUS_UNDECIDED] = 1.0
+    expected[1 * _NUM_TICHU_STATUSES + _TICHU_STATUS_DECLINED] = 1.0
+    expected[2 * _NUM_TICHU_STATUSES + _TICHU_STATUS_TICHU] = 1.0
+    expected[3 * _NUM_TICHU_STATUSES + _TICHU_STATUS_GRAND_TICHU] = 1.0
+    np.testing.assert_array_equal(block, expected)
+
+
+def test_encode_observation_tichu_status_is_seat_relative():
+    # Same underlying state as above, but observed from player 1's
+    # perspective -- offset 0 must be seat1 (self, declined), offset 1 seat2
+    # (tichu), offset 2 seat3 (grand tichu), offset 3 seat0 (undecided).
+    state = make_state(
+        {1: [card(Rank.FIVE)]},
+        large_tichu_calls=(None, False, False, True),
+        tichu_decided=(False, True, True, True),
+        tichu_calls=(False, False, True, False),
+    )
+
+    block = _tichu_status_block(encode_observation(state, player=1))
+
+    expected = np.zeros(_TICHU_STATUS_DIM, dtype=np.float32)
+    expected[0 * _NUM_TICHU_STATUSES + _TICHU_STATUS_DECLINED] = 1.0
+    expected[1 * _NUM_TICHU_STATUSES + _TICHU_STATUS_TICHU] = 1.0
+    expected[2 * _NUM_TICHU_STATUSES + _TICHU_STATUS_GRAND_TICHU] = 1.0
+    expected[3 * _NUM_TICHU_STATUSES + _TICHU_STATUS_UNDECIDED] = 1.0
+    np.testing.assert_array_equal(block, expected)
+
+
+def test_encode_observation_grand_tichu_takes_precedence_over_a_stray_tichu_call_flag():
+    # Defensive: state.decide_large_tichu's own invariant guarantees a Grand
+    # Tichu caller's tichu_calls stays False (see its "called" branch), but
+    # this pins down that even if tichu_calls[seat] were True regardless,
+    # large_tichu_calls is checked first and still reports grand_tichu.
+    state = make_state(
+        {0: [card(Rank.FIVE)]},
+        large_tichu_calls=(True, True, True, True),
+        tichu_decided=(True, True, True, True),
+        tichu_calls=(True, True, True, True),
+    )
+
+    block = _tichu_status_block(encode_observation(state, player=0))
+
+    expected = np.zeros(_TICHU_STATUS_DIM, dtype=np.float32)
+    for offset in range(NUM_PLAYERS):
+        expected[offset * _NUM_TICHU_STATUSES + _TICHU_STATUS_GRAND_TICHU] = 1.0
+    np.testing.assert_array_equal(block, expected)
+
+
+_REMAINING_START = _TICHU_STATUS_START + _TICHU_STATUS_DIM
+
+
+def _remaining_block(obs: np.ndarray) -> np.ndarray:
+    return obs[_REMAINING_START : _REMAINING_START + _REMAINING_TO_WIN_DIM]
+
+
+def test_encode_observation_remaining_to_win_is_own_then_opponent_normalized_by_target():
+    # Team 0 (seats 0/2) has 250 of 1000; team 1 has 600. From seat 0's view:
+    # own = (1000-250)/1000, opponent = (1000-600)/1000.
+    state = make_state({0: [card(Rank.FIVE)]}, team_scores=(250, 600), target_score=1000)
+
+    block = _remaining_block(encode_observation(state, player=0))
+
+    np.testing.assert_array_equal(block, np.array([0.75, 0.4], dtype=np.float32))
+
+
+def test_encode_observation_remaining_to_win_swaps_for_the_other_team():
+    state = make_state({1: [card(Rank.FIVE)]}, team_scores=(250, 600), target_score=1000)
+
+    block = _remaining_block(encode_observation(state, player=1))
+
+    np.testing.assert_array_equal(block, np.array([0.4, 0.75], dtype=np.float32))
+
+
+def test_encode_observation_remaining_to_win_is_shared_by_partners():
+    state = make_state({2: [card(Rank.FIVE)]}, team_scores=(250, 600), target_score=1000)
+
+    block = _remaining_block(encode_observation(state, player=2))
+
+    np.testing.assert_array_equal(block, np.array([0.75, 0.4], dtype=np.float32))
+
+
+def test_encode_observation_remaining_to_win_scales_with_a_configured_target():
+    # A 500-point game: the same 250-point team is halfway there, and the
+    # opponent at 0 still has the full 500 to go, i.e. 1.0 on the same scale.
+    state = make_state({0: [card(Rank.FIVE)]}, team_scores=(250, 0), target_score=500)
+
+    block = _remaining_block(encode_observation(state, player=0))
+
+    np.testing.assert_array_equal(block, np.array([0.5, 1.0], dtype=np.float32))
+
+
+def test_encode_observation_remaining_to_win_can_exceed_one_after_a_negative_score():
+    state = make_state({0: [card(Rank.FIVE)]}, team_scores=(-100, 0), target_score=1000)
+
+    block = _remaining_block(encode_observation(state, player=0))
+
+    np.testing.assert_array_equal(block, np.array([1.1, 1.0], dtype=np.float32))
+
+
 def test_encode_observation_exchange_history_is_empty_before_any_exchange():
     state = make_state({0: [card(Rank.FIVE)]})
 
@@ -221,22 +358,10 @@ def test_encode_action_for_combo_sets_card_bits_and_type():
     assert vec[:56].sum() == 2  # two cards used
 
 
-def test_encode_large_tichu_call_and_decline_are_distinguishable_one_hot_flags():
-    called_vec = encode_large_tichu_action(True)
-    declined_vec = encode_large_tichu_action(False)
-
-    assert called_vec.shape == (ACTION_DIM,)
-    assert declined_vec.shape == (ACTION_DIM,)
-    assert called_vec.sum() == 1.0
-    assert declined_vec.sum() == 1.0
-    assert not np.array_equal(called_vec, declined_vec)
-    # Disjoint from PASS and from a real combo's encoding -- the network must
-    # be able to tell a large-Tichu decision apart from a trick-play action.
-    assert not np.array_equal(called_vec, encode_action(None))
-    assert not np.array_equal(declined_vec, encode_action(None))
-
-
-def test_encode_legal_actions_during_large_tichu_offers_call_and_decline_for_the_current_seat():
+def test_encode_legal_actions_raises_when_state_is_still_in_large_tichu_phase():
+    # Large-Tichu is auto-resolved by TichuEnv before it ever calls
+    # encode_legal_actions (see TichuEnv._auto_resolve_calls); a state still
+    # in Phase.LARGE_TICHU reaching this function at all is a misuse.
     state = make_state(
         {0: [card(Rank.FIVE)]},
         phase=Phase.LARGE_TICHU,
@@ -244,20 +369,8 @@ def test_encode_legal_actions_during_large_tichu_offers_call_and_decline_for_the
         large_tichu_calls=(None, None, None, None),
     )
 
-    actions = encode_legal_actions(state, player=0)
-
-    assert {combo for combo, _ in actions} == {True, False}
-
-
-def test_encode_legal_actions_during_large_tichu_is_empty_before_a_seats_turn():
-    state = make_state(
-        {1: [card(Rank.FIVE)]},
-        phase=Phase.LARGE_TICHU,
-        current_player=0,
-        large_tichu_calls=(None, None, None, None),
-    )
-
-    assert encode_legal_actions(state, player=1) == []
+    with pytest.raises(ValueError):
+        encode_legal_actions(state, player=0)
 
 
 def test_encode_legal_actions_includes_pass_only_when_following():
@@ -286,33 +399,18 @@ def _full_hand() -> list[Card]:
     return cards[:14]
 
 
-def test_encode_tichu_call_and_decline_are_distinguishable_one_hot_flags():
-    called_vec = encode_tichu_action(True)
-    declined_vec = encode_tichu_action(False)
-
-    assert called_vec.shape == (ACTION_DIM,)
-    assert declined_vec.shape == (ACTION_DIM,)
-    assert called_vec.sum() == 1.0
-    assert declined_vec.sum() == 1.0
-    assert not np.array_equal(called_vec, declined_vec)
-    # Disjoint from PASS, a real combo, and the large-Tichu flags -- the
-    # network must be able to tell all of these decisions apart.
-    assert not np.array_equal(called_vec, encode_action(None))
-    assert not np.array_equal(declined_vec, encode_action(None))
-    assert not np.array_equal(called_vec, encode_large_tichu_action(True))
-    assert not np.array_equal(declined_vec, encode_large_tichu_action(False))
-
-
-def test_encode_legal_actions_offers_tichu_call_and_decline_before_the_first_play():
+def test_encode_legal_actions_raises_when_player_has_not_yet_decided_tichu():
+    # Same reasoning as the large-Tichu case: TichuEnv resolves the (small)
+    # Tichu decision internally (see TichuEnv._auto_resolve_calls) before a
+    # player is ever asked for trick-play legal actions.
     state = make_state(
         {0: _full_hand()},
         current_player=0,
         tichu_decided=(False, False, False, False),
     )
 
-    actions = encode_legal_actions(state, player=0)
-
-    assert {combo for combo, _ in actions} == {True, False}
+    with pytest.raises(ValueError):
+        encode_legal_actions(state, player=0)
 
 
 def test_encode_legal_actions_skips_tichu_decision_once_already_decided():
@@ -341,16 +439,6 @@ def test_encode_legal_actions_skips_tichu_decision_after_the_first_card_is_playe
     actions = encode_legal_actions(state, player=0)
 
     assert all(not isinstance(combo, bool) for combo, _ in actions)
-
-
-def test_encode_legal_actions_for_tichu_decision_is_empty_before_a_seats_turn():
-    state = make_state(
-        {1: _full_hand()},
-        current_player=0,
-        tichu_decided=(True, False, False, False),
-    )
-
-    assert encode_legal_actions(state, player=1) == []
 
 
 def test_encode_legal_actions_never_offers_pass_to_a_non_turn_player():
