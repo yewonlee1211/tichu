@@ -159,6 +159,26 @@ def test_a_round_plays_out_with_nonzero_starting_scores_and_a_custom_target():
     assert "team_scores" in result.info
 
 
+def test_step_validates_against_the_legal_set_already_computed_for_the_observation(monkeypatch):
+    """The legal set behind each StepResult's `legal_actions` is reused to
+    validate the next step() on that same state, instead of recomputing
+    `legal_combos` (profiling showed it was computed twice per decision)."""
+    import tichu_env.env as env_module
+
+    calls = []
+    real_legal_combos = env_module.legal_combos
+    monkeypatch.setattr(env_module, "legal_combos", lambda state, player: calls.append(1) or real_legal_combos(state, player))
+    rng = random.Random(8)
+    env = TichuEnv(rng=rng)
+    result = env.reset()
+
+    while not result.done:
+        combo, _ = rng.choice(result.legal_actions)
+        result = env.step(combo)
+
+    assert calls == []
+
+
 def test_finished_round_reports_team_scores_in_info():
     rng = random.Random(3)
     env = TichuEnv(rng=rng)

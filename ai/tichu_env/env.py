@@ -64,6 +64,7 @@ class TichuEnv:
         self._rng = rng if rng is not None else random.Random()
         self._target_score = target_score
         self._state: GameState | None = None
+        self._observed_legal: tuple[GameState, int, list[Combo]] | None = None
         self._heuristic = AdvancedHeuristicAgent()
 
     @property
@@ -129,7 +130,7 @@ class TichuEnv:
             return state
 
     def _step_trick_play(self, state: GameState, player: int, action: Combo | None) -> GameState:
-        legal = legal_combos(state, player)
+        legal = self._legal_for(state, player)
 
         if action is None:
             if state.current_best is None:
@@ -156,13 +157,26 @@ class TichuEnv:
         player = self.current_player if player is None else player
         return encode_legal_actions(self.state, player)
 
+    def _legal_for(self, state: GameState, player: int) -> list[Combo]:
+        """`legal_combos(state, player)`, reusing the set `_observe_current`
+        already computed for exactly this state and player when available --
+        `encode_legal_actions`' candidates are `legal_combos` plus an optional
+        PASS, so recomputing them to validate the very next step() doubled
+        the dominant self-play cost."""
+        cached = self._observed_legal
+        if cached is not None and cached[0] is state and cached[1] == player:
+            return cached[2]
+        return legal_combos(state, player)
+
     def _observe_current(self, *, reward: float, done: bool, info: dict) -> StepResult:
         state = self.state
         player = state.current_player
+        legal_actions = encode_legal_actions(state, player)
+        self._observed_legal = (state, player, [combo for combo, _ in legal_actions if combo is not None])
         return StepResult(
             player=player,
             observation=encode_observation(state, player),
-            legal_actions=encode_legal_actions(state, player),
+            legal_actions=legal_actions,
             reward=reward,
             done=done,
             info=info,
