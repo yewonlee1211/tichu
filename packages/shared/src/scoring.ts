@@ -66,8 +66,13 @@ export function scoreRound(state: GameState): Result<readonly [number, number], 
   return ok([scores[0]!, scores[1]!]);
 }
 
+/** A game ends once a team reaches `targetScore` -- unless both teams are at
+ * or above it with equal scores, in which case one more round is played (so
+ * a finished game always has a strictly higher-scoring winner). Mirrors
+ * ai/tichu_env/scoring.py's `is_game_over`. */
 export function isGameOver(cumulativeScores: readonly [number, number], targetScore: number = DEFAULT_TARGET_SCORE): boolean {
-  return cumulativeScores.some((s) => s >= targetScore);
+  if (!cumulativeScores.some((s) => s >= targetScore)) return false;
+  return cumulativeScores[0] !== cumulativeScores[1];
 }
 
 function points(cards: readonly Card[]): number {

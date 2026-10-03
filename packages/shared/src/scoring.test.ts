@@ -133,4 +133,13 @@ describe('isGameOver', () => {
     expect(isGameOver([50, 0], 50)).toBe(true);
     expect(isGameOver([49, 0], 50)).toBe(false);
   });
+
+  it.each([
+    [[1000, 1000], false],
+    [[1100, 1100], false],
+    [[1000, 995], true],
+    [[995, 995], false],
+  ] as const)('plays another round on a tie at or above the target: %j -> %s', (scores, expected) => {
+    expect(isGameOver(scores)).toBe(expected);
+  });
 });

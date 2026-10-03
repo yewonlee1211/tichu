@@ -168,3 +168,16 @@ def test_is_game_over_true_once_target_reached():
 
 def test_is_game_over_respects_custom_target():
     assert is_game_over((520, 100), target_score=500) is True
+
+
+@pytest.mark.parametrize(
+    ("scores", "expected"),
+    [
+        ((1000, 1000), False),
+        ((1100, 1100), False),
+        ((1000, 995), True),
+        ((995, 995), False),
+    ],
+)
+def test_is_game_over_plays_another_round_on_a_tie_at_or_above_target(scores, expected):
+    assert is_game_over(scores) is expected

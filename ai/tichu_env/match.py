@@ -11,16 +11,12 @@ from dataclasses import dataclass, replace
 
 from tichu_env.combinations import Combo
 from tichu_env.env import StepResult, TichuEnv
+from tichu_env.scoring import is_game_over
 
 
-def is_match_over(team_scores: tuple[int, int], target_score: int) -> bool:
-    """A match ends once a team reaches `target_score` -- unless both teams
-    are at or above it with equal scores, in which case one more round is
-    played. Training-side rule only: the product game's `is_game_over`
-    (scoring.py / packages/shared's isGameOver) has no tie rule."""
-    if not any(score >= target_score for score in team_scores):
-        return False
-    return team_scores[0] != team_scores[1]
+# Same end-of-match rule (including the tie rule) as the product game, which
+# uses scoring.py's `is_game_over` / packages/shared's `isGameOver`.
+is_match_over = is_game_over
 
 
 def match_winner(team_scores: tuple[int, int], target_score: int) -> int:

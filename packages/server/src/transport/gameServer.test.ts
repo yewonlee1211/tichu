@@ -31,6 +31,15 @@ vi.mock('../repositories/participantRepository', () => participantRepoMock);
 const userRepoMock = { findUserById: vi.fn() };
 vi.mock('../repositories/userRepository', () => userRepoMock);
 
+// Real scoring by default; a test that needs exact cumulative scores at round
+// end (e.g. a tie at the target) overrides one call with `mockReturnValueOnce`.
+const sharedMock = vi.hoisted(() => ({ scoreRound: vi.fn() }));
+vi.mock('@tichu/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tichu/shared')>();
+  sharedMock.scoreRound.mockImplementation(actual.scoreRound);
+  return { ...actual, scoreRound: sharedMock.scoreRound };
+});
+
 function resetRepoMocks(): void {
   roomRepoMock.createRoom.mockReset().mockImplementation(async (input: { code: string; title: string; isPublic: boolean }) => ({
     ok: true as const,
@@ -201,6 +210,83 @@ function chooseAction(view: PlayerView): ClientMessage {
     : { type: 'PLAY_CARDS', cards: chosen.cards, dragonRecipient };
 }
 
+interface RoundDriver {
+  readonly views: Map<number, PlayerView>;
+  readonly broadcastAndCollect: () => Promise<void>;
+}
+
+/** Starts the game and plays its first round (no Grand Tichu calls, a fixed
+ * exchange, then `chooseAction` for every turn) until every seat's view is
+ * at ROUND_OVER. */
+async function playFirstRoundToEnd(players: readonly Player[]): Promise<RoundDriver> {
+  const views = new Map<number, PlayerView>();
+
+  // On success every seat (including the actor) gets its own STATE_UPDATE;
+  // on failure only the actor gets an ERROR, so check the actor first.
+  async function sendActionAndCollect(actor: Player, action: ClientMessage): Promise<void> {
+    send(actor.ws, action);
+    const first = await nextMessage(actor.ws);
+    if (first.type === 'ERROR') {
+      throw new Error(`action ${JSON.stringify(action)} from seat ${actor.seat} was rejected: ${first.message}`);
+    }
+    if (first.type !== 'STATE_UPDATE') throw new Error(`expected STATE_UPDATE, got ${first.type}`);
+    views.set(first.view.viewerSeat, first.view);
+
+    const others = players.filter((p) => p !== actor);
+    const rest = await Promise.all(others.map((p) => nextMessage(p.ws)));
+    for (const message of rest) {
+      if (message.type !== 'STATE_UPDATE') throw new Error(`expected STATE_UPDATE, got ${message.type}`);
+      views.set(message.view.viewerSeat, message.view);
+    }
+  }
+
+  async function broadcastAndCollect(): Promise<void> {
+    const messages = await Promise.all(players.map((p) => nextMessage(p.ws)));
+    for (const message of messages) {
+      if (message.type !== 'STATE_UPDATE') throw new Error(`expected STATE_UPDATE, got ${message.type}`);
+      views.set(message.view.viewerSeat, message.view);
+    }
+  }
+
+  send(players[0]!.ws, { type: 'START_GAME' });
+  await broadcastAndCollect();
+  for (const seat of [0, 1, 2, 3]) {
+    expect(views.get(seat)?.cumulativeScores).toEqual([0, 0]);
+  }
+
+  for (const player of players) {
+    await sendActionAndCollect(player, { type: 'DECIDE_GRAND_TICHU', called: false });
+  }
+
+  for (const player of players) {
+    const hand = views.get(player.seat)!.hand;
+    const others = [0, 1, 2, 3].filter((s) => s !== player.seat);
+    const gifts: Record<number, Card> = {};
+    others.forEach((seat, i) => {
+      gifts[seat] = hand[i]!;
+    });
+    // Only the fourth submission triggers a broadcast.
+    if (player === players[players.length - 1]) {
+      await sendActionAndCollect(player, { type: 'EXCHANGE_CARDS', gifts });
+    } else {
+      send(player.ws, { type: 'EXCHANGE_CARDS', gifts });
+    }
+  }
+
+  const maxTurns = 300;
+  let turns = 0;
+  while (views.get(0)!.phase !== Phase.RoundOver) {
+    turns += 1;
+    if (turns > maxTurns) throw new Error(`round did not finish within ${maxTurns} turns`);
+
+    const actingSeat = views.get(0)!.currentPlayer;
+    const actor = players.find((p) => p.seat === actingSeat)!;
+    await sendActionAndCollect(actor, chooseAction(views.get(actingSeat)!));
+  }
+
+  return { views, broadcastAndCollect };
+}
+
 describe('GameServer', () => {
   const servers: GameServerType[] = [];
   const sockets: WebSocket[] = [];
@@ -348,68 +434,7 @@ describe('GameServer', () => {
     const { players } = await joinFourPlayers(server);
     sockets.push(...players.map((p) => p.ws));
 
-    const views = new Map<number, PlayerView>();
-
-    async function sendActionAndCollect(actor: Player, action: ClientMessage): Promise<void> {
-      send(actor.ws, action);
-      const first = await nextMessage(actor.ws);
-      if (first.type === 'ERROR') {
-        throw new Error(`action ${JSON.stringify(action)} from seat ${actor.seat} was rejected: ${first.message}`);
-      }
-      if (first.type !== 'STATE_UPDATE') throw new Error(`expected STATE_UPDATE, got ${first.type}`);
-      views.set(first.view.viewerSeat, first.view);
-
-      const others = players.filter((p) => p !== actor);
-      const rest = await Promise.all(others.map((p) => nextMessage(p.ws)));
-      for (const message of rest) {
-        if (message.type !== 'STATE_UPDATE') throw new Error(`expected STATE_UPDATE, got ${message.type}`);
-        views.set(message.view.viewerSeat, message.view);
-      }
-    }
-
-    async function broadcastAndCollect(): Promise<void> {
-      const messages = await Promise.all(players.map((p) => nextMessage(p.ws)));
-      for (const message of messages) {
-        if (message.type !== 'STATE_UPDATE') throw new Error(`expected STATE_UPDATE, got ${message.type}`);
-        views.set(message.view.viewerSeat, message.view);
-      }
-    }
-
-    send(players[0]!.ws, { type: 'START_GAME' });
-    await broadcastAndCollect();
-    for (const seat of [0, 1, 2, 3]) {
-      expect(views.get(seat)?.cumulativeScores).toEqual([0, 0]);
-    }
-
-    for (const player of players) {
-      await sendActionAndCollect(player, { type: 'DECIDE_GRAND_TICHU', called: false });
-    }
-
-    for (const player of players) {
-      const hand = views.get(player.seat)!.hand;
-      const others = [0, 1, 2, 3].filter((s) => s !== player.seat);
-      const gifts: Record<number, Card> = {};
-      others.forEach((seat, i) => {
-        gifts[seat] = hand[i]!;
-      });
-      if (player === players[players.length - 1]) {
-        await sendActionAndCollect(player, { type: 'EXCHANGE_CARDS', gifts });
-      } else {
-        send(player.ws, { type: 'EXCHANGE_CARDS', gifts });
-      }
-    }
-
-    const maxTurns = 300;
-    let turns = 0;
-    while (views.get(0)!.phase !== Phase.RoundOver) {
-      turns += 1;
-      if (turns > maxTurns) throw new Error(`round did not finish within ${maxTurns} turns`);
-
-      const actingSeat = views.get(0)!.currentPlayer;
-      const actor = players.find((p) => p.seat === actingSeat)!;
-      const action = chooseAction(views.get(actingSeat)!);
-      await sendActionAndCollect(actor, action);
-    }
+    const { views, broadcastAndCollect } = await playFirstRoundToEnd(players);
 
     // The ROUND_OVER broadcast (from the winning play/pass itself) already
     // carries the updated cumulative score -- no separate action needed.
@@ -428,6 +453,40 @@ describe('GameServer', () => {
       expect(views.get(seat)?.finishedOrder).toEqual([]);
       expect(views.get(seat)?.cumulativeScores).toEqual([team0AfterRound, team1AfterRound]);
     }
+  }, 20_000);
+
+  it.each([
+    [[1000, 1000]],
+    [[1100, 1100]],
+  ] as const)('keeps the match going on a tie at or above the target (%j) and deals the next round', async (scores) => {
+    sharedMock.scoreRound.mockReturnValueOnce({ ok: true, value: scores });
+    const server = startServer();
+    servers.push(server);
+    const { players } = await joinFourPlayers(server);
+    sockets.push(...players.map((p) => p.ws));
+
+    const { views, broadcastAndCollect } = await playFirstRoundToEnd(players);
+    expect(views.get(0)!.cumulativeScores).toEqual(scores);
+
+    await broadcastAndCollect();
+    for (const seat of [0, 1, 2, 3]) {
+      expect(views.get(seat)?.phase).toBe(Phase.LargeTichu);
+      expect(views.get(seat)?.cumulativeScores).toEqual(scores);
+    }
+  }, 20_000);
+
+  it('ends the match on (1000, 995) without dealing another round', async () => {
+    sharedMock.scoreRound.mockReturnValueOnce({ ok: true, value: [1000, 995] });
+    const server = startServer();
+    servers.push(server);
+    const { players } = await joinFourPlayers(server);
+    sockets.push(...players.map((p) => p.ws));
+
+    const { views } = await playFirstRoundToEnd(players);
+    expect(views.get(0)!.cumulativeScores).toEqual([1000, 995]);
+
+    // Well past `roundOverDisplayMs` (10ms here): no next-round broadcast.
+    await Promise.all(players.map((p) => expect(nextMessage(p.ws, 200)).rejects.toThrow(/timed out/)));
   }, 20_000);
 
   it('rejects JOIN_ROOM for a room code that does not exist', async () => {

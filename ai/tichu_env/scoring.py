@@ -61,7 +61,12 @@ def score_round(state: GameState) -> tuple[int, int]:
 
 
 def is_game_over(cumulative_scores: tuple[int, int], target_score: int = DEFAULT_TARGET_SCORE) -> bool:
-    return any(score >= target_score for score in cumulative_scores)
+    """A game ends once a team reaches `target_score` -- unless both teams
+    are at or above it with equal scores, in which case one more round is
+    played (so a finished game always has a strictly higher-scoring winner)."""
+    if not any(score >= target_score for score in cumulative_scores):
+        return False
+    return cumulative_scores[0] != cumulative_scores[1]
 
 
 def _points(cards) -> int:

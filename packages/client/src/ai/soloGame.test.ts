@@ -790,6 +790,38 @@ describe('SoloGame: full round', () => {
   });
 });
 
+describe('SoloGame: tie at or above the target score', () => {
+  // A RoundOver state resumed with the given (already-scored) cumulative
+  // totals -- `resumeFrom` marks it scored, so finishRoundAndDeal doesn't
+  // fold anything further into them.
+  function gameAfterRoundWith(cumulativeScores: readonly [number, number]): SoloGame {
+    const roundOver: GameState = { ...dealNewRound(), phase: Phase.RoundOver };
+    return new SoloGame({ session: stubSession(), resumeFrom: { state: roundOver, cumulativeScores } });
+  }
+
+  it.each([
+    [[1000, 1000]],
+    [[1100, 1100]],
+  ] as const)('does not end the match on %j, and deals another round', (scores) => {
+    const game = gameAfterRoundWith(scores);
+
+    expect(game.isMatchOver()).toBe(false);
+    const nextState = game.finishRoundAndDeal();
+
+    expect(nextState.phase).toBe(Phase.LargeTichu);
+    expect(nextState.teamScores).toEqual(scores);
+    expect(game.getCumulativeScores()).toEqual(scores);
+  });
+
+  it('ends the match on (1000, 995) without dealing another round', () => {
+    const game = gameAfterRoundWith([1000, 995]);
+
+    expect(game.isMatchOver()).toBe(true);
+    const roundOverState = game.getState();
+    expect(game.finishRoundAndDeal()).toBe(roundOverState);
+  });
+});
+
 describe('SoloGame: human trick play validation', () => {
   it('rejects an illegal card play with a Result error instead of throwing', async () => {
     const game = new SoloGame({ session: stubSession() });
