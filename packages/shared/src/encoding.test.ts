@@ -4,6 +4,7 @@ import doubleOutFixture from './goldenFixtures/double_out.json';
 import grandTichuFixture from './goldenFixtures/grand_tichu.json';
 import lastCardHandoverFixture from './goldenFixtures/last_card_handover.json';
 import normalRoundFixture from './goldenFixtures/normal_round.json';
+import remainingToWinFixture from './goldenFixtures/remaining_to_win.json';
 import tichuCallDecisionFixture from './goldenFixtures/tichu_call_decision.json';
 import { actionFromFixture, stateFromFixture } from './goldenFixtures/decode';
 import { ACTION_DIM, OBS_DIM, encodeLegalActions, encodeObservation } from './encoding';
@@ -64,6 +65,16 @@ describe('golden fixtures: encodeObservation', () => {
 
     expect(observation).toEqual(grandTichuFixture.observationForCaller);
   });
+
+  it.each(remainingToWinFixture.cases.map((entry) => [entry.state.targetScore, entry.state.teamScores, entry] as const))(
+    'matches Python remaining-to-win for target %d with team scores %j',
+    (_target, _scores, entry) => {
+      const state = stateFromFixture(entry.state as never);
+
+      expect(encodeObservation(state, 0)).toEqual(entry.observationForSeat0);
+      expect(encodeObservation(state, 1)).toEqual(entry.observationForSeat1);
+    },
+  );
 });
 
 describe('golden fixtures: encodeLegalActions', () => {

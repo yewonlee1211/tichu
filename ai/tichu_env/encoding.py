@@ -52,11 +52,16 @@ _TICHU_STATUS_TICHU = 2
 _TICHU_STATUS_GRAND_TICHU = 3
 _NUM_TICHU_STATUSES = 4
 _TICHU_STATUS_DIM = _NUM_TICHU_STATUSES * NUM_PLAYERS
-# [own team, opposing team], each (target_score - team_score) / target_score.
-# Normalized by the target so a 500-, 700-, or 3000-point game reads on the
-# same scale. Not clipped: a team can be negative (a failed Grand Tichu costs
-# 200), which makes its remaining distance exceed 1.0.
+# [own team, opposing team], each min(target_score - team_score, _REMAINING_CAP)
+# / _REMAINING_SCALE -- absolute points left, deliberately NOT a fraction of
+# the target: Tichu's point units (100 card points, +-100/200 calls) don't
+# scale with the target, so "150 left" means the same thing in a 500- or
+# 2000-point game and must encode identically for a model trained on one
+# target to transfer to another. Distances beyond the cap (targets above 2000,
+# or a negative score pushing the distance past it) all read as the cap.
 _REMAINING_TO_WIN_DIM = 2
+_REMAINING_SCALE = 1000.0
+_REMAINING_CAP = 2000
 _MAHJONG_WISH_DIM = 1 + NUM_RANKS  # no_wish, wished rank
 _FINISHED_DIM = NUM_PLAYERS
 _PHASE_DIM = NUM_PHASES
@@ -208,14 +213,17 @@ def _encode_tichu_status(state: GameState, perspective: int) -> np.ndarray:
 
 def _encode_remaining_to_win(state: GameState, perspective: int) -> np.ndarray:
     own_team = TEAM_OF[perspective]
-    target = float(state.target_score)
     return np.array(
         [
-            (target - state.team_scores[own_team]) / target,
-            (target - state.team_scores[1 - own_team]) / target,
+            _remaining_points(state, own_team) / _REMAINING_SCALE,
+            _remaining_points(state, 1 - own_team) / _REMAINING_SCALE,
         ],
         dtype=np.float32,
     )
+
+
+def _remaining_points(state: GameState, team: int) -> int:
+    return min(state.target_score - state.team_scores[team], _REMAINING_CAP)
 
 
 def _tichu_status(state: GameState, seat: int) -> int:

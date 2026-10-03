@@ -65,9 +65,13 @@ const TICHU_STATUS_TICHU = 2;
 const TICHU_STATUS_GRAND_TICHU = 3;
 const NUM_TICHU_STATUSES = 4;
 const TICHU_STATUS_DIM = NUM_TICHU_STATUSES * NUM_PLAYERS;
-// [own team, opposing team], each (targetScore - teamScore) / targetScore.
-// Must match encoding.py's _REMAINING_TO_WIN_DIM block.
+// [own team, opposing team], each min(targetScore - teamScore, REMAINING_CAP)
+// / REMAINING_SCALE -- absolute points left, not a fraction of the target, so
+// the same distance encodes identically under any target. Must match
+// encoding.py's _REMAINING_TO_WIN_DIM block.
 const REMAINING_TO_WIN_DIM = 2;
+const REMAINING_SCALE = 1000;
+const REMAINING_CAP = 2000;
 const MAHJONG_WISH_DIM = 1 + NUM_RANKS; // no_wish, wished rank
 const FINISHED_DIM = NUM_PLAYERS;
 const PHASE_DIM = NUM_PHASES;
@@ -238,11 +242,14 @@ function encodeTichuStatus(state: GameState, perspective: number): Float32Array 
 
 function encodeRemainingToWin(state: GameState, perspective: number): Float32Array {
   const ownTeam = teamOf(perspective);
-  const target = state.targetScore;
   return Float32Array.from([
-    (target - state.teamScores[ownTeam]!) / target,
-    (target - state.teamScores[1 - ownTeam]!) / target,
+    remainingPoints(state, ownTeam) / REMAINING_SCALE,
+    remainingPoints(state, 1 - ownTeam) / REMAINING_SCALE,
   ]);
+}
+
+function remainingPoints(state: GameState, team: number): number {
+  return Math.min(state.targetScore - state.teamScores[team]!, REMAINING_CAP);
 }
 
 /** One of the 4 `TICHU_STATUS_*` categories for `seat`, derived from

@@ -254,9 +254,9 @@ def _remaining_block(obs: np.ndarray) -> np.ndarray:
     return obs[_REMAINING_START : _REMAINING_START + _REMAINING_TO_WIN_DIM]
 
 
-def test_encode_observation_remaining_to_win_is_own_then_opponent_normalized_by_target():
+def test_encode_observation_remaining_to_win_is_own_then_opponent_in_absolute_points():
     # Team 0 (seats 0/2) has 250 of 1000; team 1 has 600. From seat 0's view:
-    # own = (1000-250)/1000, opponent = (1000-600)/1000.
+    # own = 750 points left, opponent = 400, each / _REMAINING_SCALE (1000).
     state = make_state({0: [card(Rank.FIVE)]}, team_scores=(250, 600), target_score=1000)
 
     block = _remaining_block(encode_observation(state, player=0))
@@ -280,14 +280,44 @@ def test_encode_observation_remaining_to_win_is_shared_by_partners():
     np.testing.assert_array_equal(block, np.array([0.75, 0.4], dtype=np.float32))
 
 
-def test_encode_observation_remaining_to_win_scales_with_a_configured_target():
-    # A 500-point game: the same 250-point team is halfway there, and the
-    # opponent at 0 still has the full 500 to go, i.e. 1.0 on the same scale.
+def test_encode_observation_remaining_to_win_is_absolute_not_a_fraction_of_the_target():
+    # A 500-point game: 250 and 500 points left read as 0.25/0.5 -- the same
+    # values those distances would have in a 1000-point game, not 0.5/1.0.
     state = make_state({0: [card(Rank.FIVE)]}, team_scores=(250, 0), target_score=500)
 
     block = _remaining_block(encode_observation(state, player=0))
 
-    np.testing.assert_array_equal(block, np.array([0.5, 1.0], dtype=np.float32))
+    np.testing.assert_array_equal(block, np.array([0.25, 0.5], dtype=np.float32))
+
+
+def test_encode_observation_remaining_to_win_is_identical_for_the_same_distance_under_different_targets():
+    # 150 points left (own) and 400 left (opponent) under target 500 vs 2000.
+    short_game = make_state({0: [card(Rank.FIVE)]}, team_scores=(350, 100), target_score=500)
+    long_game = make_state({0: [card(Rank.FIVE)]}, team_scores=(1850, 1600), target_score=2000)
+
+    short_block = _remaining_block(encode_observation(short_game, player=0))
+    long_block = _remaining_block(encode_observation(long_game, player=0))
+
+    np.testing.assert_array_equal(short_block, long_block)
+    np.testing.assert_array_equal(short_block, np.array([0.15, 0.4], dtype=np.float32))
+
+
+def test_encode_observation_remaining_to_win_is_capped_at_2000_points():
+    # Target 3000: 3000 and 2500 left both clip to the 2000-point cap (2.0).
+    state = make_state({0: [card(Rank.FIVE)]}, team_scores=(0, 500), target_score=3000)
+
+    block = _remaining_block(encode_observation(state, player=0))
+
+    np.testing.assert_array_equal(block, np.array([2.0, 2.0], dtype=np.float32))
+
+
+def test_encode_observation_remaining_to_win_cap_also_applies_after_a_negative_score():
+    # Target 2000 with -100: 2100 points left, clipped to the same 2.0 as 2000.
+    state = make_state({0: [card(Rank.FIVE)]}, team_scores=(-100, 0), target_score=2000)
+
+    block = _remaining_block(encode_observation(state, player=0))
+
+    np.testing.assert_array_equal(block, np.array([2.0, 2.0], dtype=np.float32))
 
 
 def test_encode_observation_remaining_to_win_can_exceed_one_after_a_negative_score():

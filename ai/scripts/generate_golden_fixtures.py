@@ -396,6 +396,40 @@ def build_tichu_call_decision() -> dict:
     }
 
 
+# --- Scenario 7: remaining-to-win across targets -------------------------------
+
+
+def build_remaining_to_win() -> dict:
+    """The same mid-trick position under several (target, team_scores) pairs.
+    Every other fixture runs at target 1000 from near-zero scores, where the
+    old target-relative encoding and the absolute one coincide -- these cases
+    are the ones that tell them apart: a non-1000 target, the same distance
+    under two targets, and distances past the 2000-point cap (a 3000 target,
+    and a negative score under a 2000 target)."""
+    cases = [
+        (500, (250, 0)),
+        (500, (350, 100)),
+        (2000, (1850, 1600)),
+        (3000, (0, 500)),
+        (2000, (-100, 0)),
+    ]
+    entries = []
+    for target_score, team_scores in cases:
+        state = make_playing_state(
+            {0: [card(Rank.FIVE)], 1: [card(Rank.SIX)]},
+            target_score=target_score,
+            team_scores=team_scores,
+        )
+        entries.append(
+            {
+                "state": ser_state(state),
+                "observationForSeat0": ser_observation(state, 0),
+                "observationForSeat1": ser_observation(state, 1),
+            }
+        )
+    return {"cases": entries}
+
+
 def main() -> None:
     scenarios = [
         ("normal_round", "정상 라운드: 딜 -> 그랜드 티츄 전원 패스 -> 교환 -> 한 트릭 완료", build_normal_round),
@@ -404,6 +438,7 @@ def main() -> None:
         ("last_card_handover", "마지막 카드 이관: 4등의 잔여 패 점수가 상대팀으로 이관", build_last_card_handover),
         ("grand_tichu", "그랜드 티츄: 성공한 그랜드 티츄 콜의 스코어링", build_grand_tichu),
         ("tichu_call_decision", "티츄 콜 결정: 라지 티츄 2비트 인코딩 + 작은 티츄 콜/포기 결정 지점", build_tichu_call_decision),
+        ("remaining_to_win", "승리까지 남은 점수: 목표 점수가 달라도 절대 남은 점수로 인코딩, 2000점 상한", build_remaining_to_win),
     ]
     for name, description, builder in scenarios:
         write_fixture(name, description, builder())
