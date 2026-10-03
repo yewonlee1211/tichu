@@ -11,6 +11,8 @@ import torch
 
 from tichu_env.combinations import Combo
 from tichu_env.env import StepResult, TichuEnv
+from tichu_env.match import MatchEnv, MatchStart
+from tichu_env.state import DEFAULT_TARGET_SCORE
 
 from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.heuristic import HeuristicAgent
@@ -130,6 +132,65 @@ def run_arena(
     )
 
 
+@dataclass(frozen=True)
+class MatchOutcome:
+    team_scores: tuple[int, int]
+    winner: int
+    rounds: int
+
+
+@dataclass(frozen=True)
+class MatchArenaResult:
+    matches: int
+    team_a_wins: int
+    team_b_wins: int
+    team_a_win_rate: float
+    team_a_elo_diff: float
+    mean_rounds: float
+
+
+def play_arena_match(env: MatchEnv, seat_choosers: dict[int, SeatChooser], target_score: int) -> MatchOutcome:
+    """Plays one whole match from (0, 0) to `target_score` (see
+    `tichu_env.match.MatchEnv`, including its tie rule), letting each seat's
+    chooser pick every one of its turns."""
+    result = env.reset(MatchStart(target_score=target_score, team_scores=(0, 0)))
+    rounds = 0
+    while not result.done:
+        result = env.step(seat_choosers[result.player](result))
+        rounds += "round_scores" in result.info
+    return MatchOutcome(team_scores=env.team_scores, winner=result.info["winner"], rounds=rounds)
+
+
+def run_match_arena(
+    team_a_chooser: SeatChooser,
+    team_b_chooser: SeatChooser,
+    matches: int,
+    target_score: int = DEFAULT_TARGET_SCORE,
+    rng: random.Random | None = None,
+) -> MatchArenaResult:
+    """Match-level counterpart to `run_arena`: plays `matches` whole matches
+    (team A at seats 0/2, team B at 1/3) and reports team A's match win rate,
+    the Elo gap implied by it, and the mean match length in rounds. Matches
+    never end drawn (the tie rule plays extra rounds), so there is no draw
+    count."""
+    if matches <= 0:
+        raise ValueError("matches must be positive")
+    env = MatchEnv(rng=rng if rng is not None else random.Random())
+    seat_choosers = {0: team_a_chooser, 1: team_b_chooser, 2: team_a_chooser, 3: team_b_chooser}
+
+    outcomes = [play_arena_match(env, seat_choosers, target_score) for _ in range(matches)]
+    team_a_wins = sum(1 for outcome in outcomes if outcome.winner == 0)
+    win_rate = team_a_wins / matches
+    return MatchArenaResult(
+        matches=matches,
+        team_a_wins=team_a_wins,
+        team_b_wins=matches - team_a_wins,
+        team_a_win_rate=win_rate,
+        team_a_elo_diff=_elo_diff_from_win_rate(win_rate),
+        mean_rounds=sum(outcome.rounds for outcome in outcomes) / matches,
+    )
+
+
 def _elo_diff_from_win_rate(score: float) -> float:
     """Standard performance-rating estimate of the Elo gap implied by a score
     (wins + 0.5*draws, over N games), clipped away from the 0/1 boundary so a
@@ -172,7 +233,16 @@ def _main() -> None:
         "--opponent", default="heuristic", help="'heuristic', 'advanced_heuristic', a checkpoint path, or 'latest'."
     )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
-    parser.add_argument("--games", type=int, default=100)
+    parser.add_argument(
+        "--games", type=int, default=100, help="Number of rounds (--mode round) or whole matches (--mode match)."
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("round", "match"),
+        default="round",
+        help="'round': per-round win rate; 'match': whole matches to --target-score, match win rate.",
+    )
+    parser.add_argument("--target-score", type=int, default=DEFAULT_TARGET_SCORE, help="Match target (--mode match).")
     parser.add_argument("--stochastic", action="store_true", help="Sample actions instead of playing the argmax move.")
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
@@ -185,6 +255,17 @@ def _main() -> None:
     )
 
     rng = random.Random(args.seed) if args.seed is not None else None
+    if args.mode == "match":
+        match_result = run_match_arena(
+            team_a_chooser, team_b_chooser, matches=args.games, target_score=args.target_score, rng=rng
+        )
+        print(
+            f"{match_result.matches} matches (target {args.target_score}): A won {match_result.team_a_wins}, "
+            f"B won {match_result.team_b_wins} (A match win rate {match_result.team_a_win_rate:.1%}, "
+            f"Elo diff {match_result.team_a_elo_diff:+.1f}, mean {match_result.mean_rounds:.1f} rounds/match)"
+        )
+        return
+
     result = run_arena(team_a_chooser, team_b_chooser, games=args.games, rng=rng)
 
     print(
