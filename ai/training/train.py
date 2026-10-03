@@ -15,6 +15,7 @@ from torch import optim
 from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.heuristic import HeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
+from tichu_env.match import MatchStartConfig
 from training.opponent_pool import OpponentPool
 from training.self_play import (
     HeuristicOpponentAdapter,
@@ -42,6 +43,10 @@ class IterationMetrics:
 DEFAULT_REWARD_SCALE = 100.0
 DEFAULT_ENTROPY_COEF = 0.0
 DEFAULT_CLIP_EPSILON = 0.2
+# λ and γ in the match return `r_k / S + λ·γ^(K−k)·z` -- see
+# .claude/plans/tichu-m2-action-space-curriculum.plan.md's "매치 단위 학습 루프 결정".
+DEFAULT_MATCH_WIN_WEIGHT = 1.0
+DEFAULT_MATCH_DISCOUNT = 0.9
 
 
 _REQUIRED_TRAINING_STATE_KEYS = {"iteration", "model_state_dict", "optimizer_state_dict", "rng_state"}
@@ -199,11 +204,41 @@ def migrate_action_encoder_input_layer(network: TichuPolicyValueNet, checkpoint_
         new_weight[:, -1] = old_weight[:, -1]
 
 
+def _collect_returns(
+    episodes: list[list[Transition]],
+    reward_scale: float,
+    match_win_weight: float,
+    match_discount: float,
+) -> tuple[list[Transition], list[float], torch.Tensor]:
+    """Flattens `episodes` into (transitions, raw_returns, scaled_returns).
+    Every transition of a trajectory shares its last transition's return
+    `G = reward / reward_scale + match_win_weight · match_discount^(K−k) · z`
+    (see training.self_play.Transition); `raw_returns` is just the round
+    margin `reward`, kept in score units for the `mean_return` metric."""
+    transitions: list[Transition] = []
+    raw_returns: list[float] = []
+    scaled_returns: list[float] = []
+    for trajectory in episodes:
+        if not trajectory:
+            continue
+        last = trajectory[-1]
+        scaled_return = (
+            last.reward / reward_scale
+            + match_win_weight * match_discount**last.rounds_to_match_end * last.match_outcome
+        )
+        transitions.extend(trajectory)
+        raw_returns.extend([last.reward] * len(trajectory))
+        scaled_returns.extend([scaled_return] * len(trajectory))
+    return transitions, raw_returns, torch.tensor(scaled_returns, dtype=torch.float32)
+
+
 def compute_reinforce_loss(
     network: TichuPolicyValueNet,
     episodes: list[list[Transition]],
     reward_scale: float = DEFAULT_REWARD_SCALE,
     entropy_coef: float = DEFAULT_ENTROPY_COEF,
+    match_win_weight: float = DEFAULT_MATCH_WIN_WEIGHT,
+    match_discount: float = DEFAULT_MATCH_DISCOUNT,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, float]:
     """Returns (policy_loss, value_loss, total_loss, mean_return, mean_entropy) for one
     batch of self-play episodes, using REINFORCE with a learned value baseline. A round
@@ -223,17 +258,14 @@ def compute_reinforce_loss(
     `network.forward_batch` rather than one `network.forward` call per transition --
     with ~20 transitions per game and dozens of games per iteration, a per-transition
     Python loop through the network turns into thousands of tiny matmuls that autograd
-    then has to retrace node-by-node on `.backward()`."""
-    transitions: list[Transition] = []
-    raw_returns: list[float] = []
-    for trajectory in episodes:
-        if not trajectory:
-            continue
-        raw_return = trajectory[-1].reward
-        transitions.extend(trajectory)
-        raw_returns.extend([raw_return] * len(trajectory))
+    then has to retrace node-by-node on `.backward()`.
 
-    scaled_returns = torch.tensor([r / reward_scale for r in raw_returns], dtype=torch.float32)
+    In match self-play the return also carries the discounted match outcome
+    (`match_win_weight`, `match_discount`; see `_collect_returns`). Single-round
+    transitions have z = 0, so for them the return is the round margin alone."""
+    transitions, raw_returns, scaled_returns = _collect_returns(
+        episodes, reward_scale, match_win_weight, match_discount
+    )
 
     obs_batch = torch.as_tensor(np.stack([t.observation for t in transitions]), dtype=torch.float32)
     action_vectors = torch.as_tensor(
@@ -267,6 +299,8 @@ def compute_ppo_loss(
     reward_scale: float = DEFAULT_REWARD_SCALE,
     entropy_coef: float = DEFAULT_ENTROPY_COEF,
     clip_epsilon: float = DEFAULT_CLIP_EPSILON,
+    match_win_weight: float = DEFAULT_MATCH_WIN_WEIGHT,
+    match_discount: float = DEFAULT_MATCH_DISCOUNT,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, float]:
     """PPO's clipped-surrogate counterpart to `compute_reinforce_loss` -- same
     signature and same value-loss/entropy terms, but the policy loss uses
@@ -285,16 +319,9 @@ def compute_ppo_loss(
     single transition's loss can reward pushing the policy further in a direction
     it has already moved a lot in, which is exactly the unbounded-single-step
     policy churn this function exists to prevent."""
-    transitions: list[Transition] = []
-    raw_returns: list[float] = []
-    for trajectory in episodes:
-        if not trajectory:
-            continue
-        raw_return = trajectory[-1].reward
-        transitions.extend(trajectory)
-        raw_returns.extend([raw_return] * len(trajectory))
-
-    scaled_returns = torch.tensor([r / reward_scale for r in raw_returns], dtype=torch.float32)
+    transitions, raw_returns, scaled_returns = _collect_returns(
+        episodes, reward_scale, match_win_weight, match_discount
+    )
     old_log_probs = torch.tensor([t.old_log_prob for t in transitions], dtype=torch.float32)
 
     obs_batch = torch.as_tensor(np.stack([t.observation for t in transitions]), dtype=torch.float32)
@@ -357,6 +384,9 @@ def train(
     ppo_epochs: int | None = None,
     clip_epsilon: float = DEFAULT_CLIP_EPSILON,
     self_play_workers: int = 1,
+    match_start_config: MatchStartConfig | None = None,
+    match_win_weight: float = DEFAULT_MATCH_WIN_WEIGHT,
+    match_discount: float = DEFAULT_MATCH_DISCOUNT,
     rng: random.Random | None = None,
     checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
     checkpoint_every: int = 10,
@@ -428,7 +458,20 @@ def train(
     the schedule as if the new `lr_min` (and current `iterations`) had applied for the
     *entire* run, purely to derive the correct internal position to continue from --
     iterations 1..N's already-recorded history is untouched, but the new curve is not a
-    clean splice of "old shape then new shape"."""
+    clean splice of "old shape then new shape".
+
+    `match_start_config`, if set, switches self-play from single rounds to whole
+    matches whose starting state is drawn from it (see
+    `training.self_play.play_self_play_match`); `games_per_iteration` then counts
+    matches. `match_win_weight` (λ) and `match_discount` (γ) weight the match
+    outcome in the return (see `_collect_returns`) and have no effect on
+    single-round episodes. Left `None` (the API default, kept so existing callers
+    and tests are unchanged), each game is one round as before; the CLI defaults
+    to match training instead."""
+    if match_win_weight < 0:
+        raise ValueError("match_win_weight must be non-negative")
+    if not 0.0 < match_discount <= 1.0:
+        raise ValueError("match_discount must be within (0, 1]")
     rng = rng if rng is not None else random.Random()
 
     resumed_state = None
@@ -496,6 +539,9 @@ def train(
             ppo_epochs=ppo_epochs,
             clip_epsilon=clip_epsilon,
             self_play_workers=self_play_workers,
+            match_start_config=match_start_config,
+            match_win_weight=match_win_weight,
+            match_discount=match_discount,
             checkpoint_dir=checkpoint_dir,
             checkpoint_every=checkpoint_every,
             metrics_path=metrics_path,
@@ -521,6 +567,9 @@ def _run_training_loop(
     ppo_epochs: int | None,
     clip_epsilon: float,
     self_play_workers: int,
+    match_start_config: MatchStartConfig | None,
+    match_win_weight: float,
+    match_discount: float,
     checkpoint_dir: Path,
     checkpoint_every: int,
     metrics_path: Path,
@@ -550,6 +599,7 @@ def _run_training_loop(
                     rng=rng,
                     opponent=opponent,
                     opponent_factory=opponent_factory,
+                    match_start_config=match_start_config,
                 )
             else:
                 episodes = generate_self_play_games_parallel(
@@ -559,19 +609,26 @@ def _run_training_loop(
                     rng=rng,
                     opponent=opponent,
                     opponent_factory=opponent_factory,
+                    match_start_config=match_start_config,
                 )
 
+            return_kwargs = {
+                "reward_scale": reward_scale,
+                "entropy_coef": entropy_coef,
+                "match_win_weight": match_win_weight,
+                "match_discount": match_discount,
+            }
             if ppo_epochs is not None:
                 for _ in range(ppo_epochs):
                     policy_loss, value_loss, total_loss, mean_return, mean_entropy = compute_ppo_loss(
-                        network, episodes, reward_scale=reward_scale, entropy_coef=entropy_coef, clip_epsilon=clip_epsilon
+                        network, episodes, clip_epsilon=clip_epsilon, **return_kwargs
                     )
                     optimizer.zero_grad()
                     total_loss.backward()
                     optimizer.step()
             else:
                 policy_loss, value_loss, total_loss, mean_return, mean_entropy = compute_reinforce_loss(
-                    network, episodes, reward_scale=reward_scale, entropy_coef=entropy_coef
+                    network, episodes, **return_kwargs
                 )
                 optimizer.zero_grad()
                 total_loss.backward()
@@ -681,6 +738,35 @@ def _main() -> None:
         "dominates iteration time, so this is the main lever for wall-clock training "
         "speed; a good starting point is the container's CPU count.",
     )
+    parser.add_argument(
+        "--single-round",
+        action="store_true",
+        help="Train on single rounds from (0, 0) instead of whole matches (the pre-match-loop behavior).",
+    )
+    parser.add_argument(
+        "--full-match-prob",
+        type=float,
+        default=MatchStartConfig.full_match_prob,
+        help="Share of matches played in full from (0, 0); the rest start from sampled remaining-to-win points.",
+    )
+    parser.add_argument(
+        "--max-remaining-gap",
+        type=int,
+        default=MatchStartConfig.max_remaining_gap,
+        help="Cap on the gap between the two teams' sampled remaining-to-win points.",
+    )
+    parser.add_argument(
+        "--match-win-weight",
+        type=float,
+        default=DEFAULT_MATCH_WIN_WEIGHT,
+        help="λ: weight of the match outcome z in the return r_k/S + λ·γ^(K−k)·z.",
+    )
+    parser.add_argument(
+        "--match-discount",
+        type=float,
+        default=DEFAULT_MATCH_DISCOUNT,
+        help="γ: per-round discount of the match outcome in the return r_k/S + λ·γ^(K−k)·z.",
+    )
     parser.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_CHECKPOINT_DIR)
     parser.add_argument("--checkpoint-every", type=int, default=10)
     parser.add_argument("--metrics-path", type=Path, default=DEFAULT_METRICS_PATH)
@@ -733,6 +819,11 @@ def _main() -> None:
             seed_network = TichuPolicyValueNet()
             seed_network.load_state_dict(torch.load(seed_checkpoint, weights_only=True))
             opponent_pool.add(seed_network)
+    match_start_config = (
+        None
+        if args.single_round
+        else MatchStartConfig(full_match_prob=args.full_match_prob, max_remaining_gap=args.max_remaining_gap)
+    )
     history = train(
         network,
         iterations=args.iterations,
@@ -746,6 +837,9 @@ def _main() -> None:
         ppo_epochs=args.ppo_epochs,
         clip_epsilon=args.clip_epsilon,
         self_play_workers=args.self_play_workers,
+        match_start_config=match_start_config,
+        match_win_weight=args.match_win_weight,
+        match_discount=args.match_discount,
         rng=rng,
         checkpoint_dir=args.checkpoint_dir,
         checkpoint_every=args.checkpoint_every,

@@ -3,6 +3,7 @@ import random
 import numpy as np
 import pytest
 import torch
+from tichu_env.match import MatchStart, MatchStartConfig, match_winner
 from tichu_env.scoring import TEAM_OF
 
 from agents.advanced_heuristic import AdvancedHeuristicAgent
@@ -14,6 +15,7 @@ from training.self_play import (
     _split_game_counts,
     generate_self_play_games,
     generate_self_play_games_parallel,
+    play_self_play_match,
     play_self_play_round,
 )
 
@@ -165,6 +167,96 @@ def test_transition_is_immutable():
         assert False, "Transition should be frozen"
     except AttributeError:
         pass
+
+
+# --- match-level self-play ---------------------------------------------------
+
+# 500-point full matches always take at least 2 rounds: no single round can
+# swing more than a double win (200) plus a Grand Tichu (200).
+_MULTI_ROUND = MatchStartConfig(full_match_prob=1.0, full_match_targets=(500,))
+_SHORT_MATCHES = MatchStartConfig(
+    full_match_prob=0.0, remaining_max=200, max_remaining_gap=100, sampled_target_score=200
+)
+
+
+def test_match_rollout_labels_each_rounds_last_transition_with_margin_outcome_and_rounds_to_end():
+    network = _small_network()
+
+    rollout = play_self_play_match(network, rng=random.Random(50), start_config=_MULTI_ROUND)
+
+    num_rounds = len(rollout.round_scores)
+    assert num_rounds >= 2
+    assert len(rollout.trajectories) == 4 * num_rounds
+    assert rollout.start == MatchStart(target_score=500, team_scores=(0, 0))
+    assert rollout.team_scores == (
+        sum(scores[0] for scores in rollout.round_scores),
+        sum(scores[1] for scores in rollout.round_scores),
+    )
+    assert rollout.winner == match_winner(rollout.team_scores, 500)
+
+    for index, trajectory in enumerate(rollout.trajectories):
+        if not trajectory:
+            continue
+        round_index, player = divmod(index, 4)
+        own, opp = TEAM_OF[player], 1 - TEAM_OF[player]
+        round_scores = rollout.round_scores[round_index]
+        last = trajectory[-1]
+        assert last.reward == float(round_scores[own] - round_scores[opp])
+        assert last.match_outcome == (1.0 if own == rollout.winner else -1.0)
+        assert last.rounds_to_match_end == num_rounds - 1 - round_index
+        for transition in trajectory[:-1]:
+            assert (transition.reward, transition.match_outcome, transition.rounds_to_match_end) == (0.0, 0.0, 0)
+
+
+def test_match_rollout_records_nothing_for_opponent_seats_in_any_round():
+    network = _small_network()
+
+    rollout = play_self_play_match(
+        network, rng=random.Random(51), opponent=AdvancedHeuristicAgent(), start_config=_MULTI_ROUND
+    )
+
+    for index, trajectory in enumerate(rollout.trajectories):
+        if TEAM_OF[index % 4] == TEAM_OF[1]:
+            assert trajectory == []
+    assert any(rollout.trajectories[index] for index in range(0, len(rollout.trajectories), 2))
+
+
+def test_single_round_transitions_carry_no_match_outcome():
+    network = _small_network()
+
+    trajectories = play_self_play_round(network, rng=random.Random(52))
+
+    for trajectory in trajectories:
+        for transition in trajectory:
+            assert (transition.match_outcome, transition.rounds_to_match_end) == (0.0, 0)
+
+
+def test_generate_self_play_games_plays_matches_when_given_a_start_config():
+    network = _small_network()
+    calls = []
+
+    def factory():
+        calls.append(1)
+        return None
+
+    episodes = generate_self_play_games(
+        network, num_games=3, rng=random.Random(53), opponent_factory=factory, match_start_config=_SHORT_MATCHES
+    )
+
+    assert len(calls) == 3, "one opponent draw per match, not per round"
+    assert len(episodes) % 4 == 0 and len(episodes) >= 4 * 3
+    assert any(trajectory[-1].match_outcome != 0.0 for trajectory in episodes if trajectory)
+
+
+def test_generate_self_play_games_parallel_forwards_the_match_start_config():
+    network = _small_network()
+
+    episodes = generate_self_play_games_parallel(
+        network, num_games=2, num_workers=2, rng=random.Random(54), match_start_config=_SHORT_MATCHES
+    )
+
+    assert len(episodes) % 4 == 0 and len(episodes) >= 4 * 2
+    assert all(trajectory[-1].match_outcome in (1.0, -1.0) for trajectory in episodes if trajectory)
 
 
 def test_split_game_counts_evenly_divides_when_there_is_no_remainder():

@@ -10,6 +10,7 @@ import torch
 import training.train as train_module
 from agents.advanced_heuristic import AdvancedHeuristicAgent
 from agents.policy_network import TichuPolicyValueNet
+from tichu_env.match import MatchStartConfig
 from training.opponent_pool import OpponentPool
 from training.self_play import HeuristicOpponentAdapter, PolicyOpponent, generate_self_play_games
 from training.train import (
@@ -153,6 +154,8 @@ def _naive_reference_reinforce_loss(
     episodes: list[list],
     reward_scale: float = 100.0,
     entropy_coef: float = 0.0,
+    match_win_weight: float = 1.0,
+    match_discount: float = 0.9,
 ):
     """Independent, unbatched per-transition reimplementation of
     `compute_reinforce_loss`'s math -- used to pin down the batched implementation's
@@ -165,8 +168,12 @@ def _naive_reference_reinforce_loss(
     for trajectory in episodes:
         if not trajectory:
             continue
-        raw_return = trajectory[-1].reward
-        scaled_return = raw_return / reward_scale
+        last = trajectory[-1]
+        raw_return = last.reward
+        scaled_return = (
+            raw_return / reward_scale
+            + match_win_weight * match_discount**last.rounds_to_match_end * last.match_outcome
+        )
         for transition in trajectory:
             obs = torch.as_tensor(transition.observation, dtype=torch.float32)
             action_vectors = torch.as_tensor(transition.action_vectors, dtype=torch.float32)
@@ -222,6 +229,8 @@ def _naive_reference_ppo_loss(
     reward_scale: float = 100.0,
     entropy_coef: float = 0.0,
     clip_epsilon: float = 0.2,
+    match_win_weight: float = 1.0,
+    match_discount: float = 0.9,
 ):
     """Independent, unbatched per-transition reimplementation of the clipped PPO
     surrogate objective -- same role as `_naive_reference_reinforce_loss` above:
@@ -235,8 +244,12 @@ def _naive_reference_ppo_loss(
     for trajectory in episodes:
         if not trajectory:
             continue
-        raw_return = trajectory[-1].reward
-        scaled_return = raw_return / reward_scale
+        last = trajectory[-1]
+        raw_return = last.reward
+        scaled_return = (
+            raw_return / reward_scale
+            + match_win_weight * match_discount**last.rounds_to_match_end * last.match_outcome
+        )
         for transition in trajectory:
             obs = torch.as_tensor(transition.observation, dtype=torch.float32)
             action_vectors = torch.as_tensor(transition.action_vectors, dtype=torch.float32)
@@ -411,7 +424,7 @@ def test_train_forwards_its_opponent_straight_through_to_self_play(tmp_path: Pat
     seen_opponents = []
     real_generate = train_module.generate_self_play_games
 
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None):
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, **kwargs):
         seen_opponents.append(opponent)
         return real_generate(
             network,
@@ -419,6 +432,7 @@ def test_train_forwards_its_opponent_straight_through_to_self_play(tmp_path: Pat
             rng=rng,
             opponent=opponent,
             opponent_factory=opponent_factory,
+            **kwargs,
         )
 
     monkeypatch.setattr(train_module, "generate_self_play_games", spy)
@@ -957,7 +971,7 @@ def test_train_forwards_an_opponent_factory_when_opponent_pool_is_set(tmp_path: 
     seen_factories = []
     real_generate = train_module.generate_self_play_games
 
-    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None):
+    def spy(network, num_games, rng=None, opponent=None, opponent_factory=None, **kwargs):
         seen_factories.append(opponent_factory)
         return real_generate(
             network,
@@ -965,6 +979,7 @@ def test_train_forwards_an_opponent_factory_when_opponent_pool_is_set(tmp_path: 
             rng=rng,
             opponent=opponent,
             opponent_factory=opponent_factory,
+            **kwargs,
         )
 
     monkeypatch.setattr(train_module, "generate_self_play_games", spy)
@@ -1114,11 +1129,9 @@ def test_train_calls_compute_ppo_loss_ppo_epochs_times_per_iteration(tmp_path: P
     calls = []
     real_compute_ppo_loss = train_module.compute_ppo_loss
 
-    def spy(network, episodes, reward_scale=100.0, entropy_coef=0.0, clip_epsilon=0.2):
+    def spy(network, episodes, **kwargs):
         calls.append(1)
-        return real_compute_ppo_loss(
-            network, episodes, reward_scale=reward_scale, entropy_coef=entropy_coef, clip_epsilon=clip_epsilon
-        )
+        return real_compute_ppo_loss(network, episodes, **kwargs)
 
     monkeypatch.setattr(train_module, "compute_ppo_loss", spy)
 
@@ -1419,4 +1432,201 @@ def _find_a_dead_pid() -> int:
     os.waitpid(pid, 0)
     return pid
 
-    assert (checkpoint_dir / "checkpoint_1.pt").exists()
+
+# --- match-level training (match_start_config / match_win_weight / match_discount) ---
+
+_SHORT_MATCHES = MatchStartConfig(
+    full_match_prob=0.0, remaining_max=200, max_remaining_gap=100, sampled_target_score=200
+)
+
+
+def _single_transition_episode(network: TichuPolicyValueNet, **fields) -> list[list]:
+    episodes = generate_self_play_games(network, num_games=1, rng=random.Random(90))
+    first = next(trajectory for trajectory in episodes if trajectory)[0]
+    return [[replace(first, **fields)]]
+
+
+def _state_value(network: TichuPolicyValueNet, transition) -> float:
+    with torch.no_grad():
+        return network(
+            torch.as_tensor(transition.observation, dtype=torch.float32),
+            torch.as_tensor(transition.action_vectors, dtype=torch.float32),
+        ).state_value.item()
+
+
+@pytest.mark.parametrize("loss_fn", [compute_reinforce_loss, compute_ppo_loss])
+def test_value_target_adds_the_discounted_match_outcome_to_the_scaled_round_margin(loss_fn):
+    network = _small_network()
+    episodes = _single_transition_episode(network, reward=50.0, match_outcome=-1.0, rounds_to_match_end=2)
+    value = _state_value(network, episodes[0][0])
+
+    _, value_loss, _, mean_return, _ = loss_fn(network, episodes, match_win_weight=1.0, match_discount=0.9)
+
+    expected_target = 50.0 / 100.0 + 1.0 * 0.9**2 * -1.0
+    assert value_loss.item() == pytest.approx((value - expected_target) ** 2, abs=1e-5)
+    assert mean_return == pytest.approx(50.0)
+
+
+@pytest.mark.parametrize("loss_fn", [compute_reinforce_loss, compute_ppo_loss])
+def test_zero_match_win_weight_falls_back_to_the_round_margin_alone(loss_fn):
+    network = _small_network()
+    episodes = _single_transition_episode(network, reward=-120.0, match_outcome=1.0, rounds_to_match_end=0)
+    value = _state_value(network, episodes[0][0])
+
+    _, value_loss, _, _, _ = loss_fn(network, episodes, match_win_weight=0.0)
+
+    assert value_loss.item() == pytest.approx((value - (-1.2)) ** 2, abs=1e-5)
+
+
+def test_compute_reinforce_loss_matches_the_naive_reference_on_match_episodes():
+    network = _small_network()
+    episodes = generate_self_play_games(
+        network, num_games=2, rng=random.Random(91), match_start_config=_SHORT_MATCHES
+    )
+
+    reference = _naive_reference_reinforce_loss(
+        network, episodes, entropy_coef=0.1, match_win_weight=0.7, match_discount=0.5
+    )
+    actual = compute_reinforce_loss(network, episodes, entropy_coef=0.1, match_win_weight=0.7, match_discount=0.5)
+
+    for ref, got in zip(reference[:3], actual[:3]):
+        assert torch.allclose(got, ref, atol=1e-5)
+    assert actual[3] == pytest.approx(reference[3])
+    assert actual[4] == pytest.approx(reference[4], abs=1e-5)
+
+
+def test_compute_ppo_loss_matches_the_naive_reference_on_match_episodes():
+    network = _small_network()
+    episodes = generate_self_play_games(
+        network, num_games=2, rng=random.Random(92), match_start_config=_SHORT_MATCHES
+    )
+    shifted = [[replace(t, old_log_prob=t.old_log_prob - 0.5) for t in trajectory] for trajectory in episodes]
+
+    reference = _naive_reference_ppo_loss(
+        network, shifted, entropy_coef=0.1, match_win_weight=0.7, match_discount=0.5
+    )
+    actual = compute_ppo_loss(network, shifted, entropy_coef=0.1, match_win_weight=0.7, match_discount=0.5)
+
+    for ref, got in zip(reference[:3], actual[:3]):
+        assert torch.allclose(got, ref, atol=1e-5)
+    assert actual[3] == pytest.approx(reference[3])
+    assert actual[4] == pytest.approx(reference[4], abs=1e-5)
+
+
+def test_train_forwards_match_settings_to_self_play_and_both_loss_paths(tmp_path: Path, monkeypatch):
+    seen_configs = []
+    seen_loss_kwargs = []
+    real_generate = train_module.generate_self_play_games
+    real_reinforce = train_module.compute_reinforce_loss
+    real_ppo = train_module.compute_ppo_loss
+
+    def generate_spy(network, num_games, **kwargs):
+        seen_configs.append(kwargs.get("match_start_config"))
+        return real_generate(network, num_games, **kwargs)
+
+    def reinforce_spy(network, episodes, **kwargs):
+        seen_loss_kwargs.append(("reinforce", kwargs["match_win_weight"], kwargs["match_discount"]))
+        return real_reinforce(network, episodes, **kwargs)
+
+    def ppo_spy(network, episodes, **kwargs):
+        seen_loss_kwargs.append(("ppo", kwargs["match_win_weight"], kwargs["match_discount"]))
+        return real_ppo(network, episodes, **kwargs)
+
+    monkeypatch.setattr(train_module, "generate_self_play_games", generate_spy)
+    monkeypatch.setattr(train_module, "compute_reinforce_loss", reinforce_spy)
+    monkeypatch.setattr(train_module, "compute_ppo_loss", ppo_spy)
+
+    for index, ppo_epochs in enumerate((None, 1)):
+        train(
+            _small_network(),
+            iterations=1,
+            games_per_iteration=1,
+            ppo_epochs=ppo_epochs,
+            match_start_config=_SHORT_MATCHES,
+            match_win_weight=0.6,
+            match_discount=0.8,
+            rng=random.Random(93),
+            checkpoint_dir=tmp_path / f"checkpoints_{index}",
+            checkpoint_every=100,
+            metrics_path=tmp_path / f"metrics_{index}.csv",
+        )
+
+    assert seen_configs == [_SHORT_MATCHES, _SHORT_MATCHES]
+    assert seen_loss_kwargs == [("reinforce", 0.6, 0.8), ("ppo", 0.6, 0.8)]
+
+
+def test_train_runs_match_self_play_across_multiple_workers(tmp_path: Path):
+    history = train(
+        _small_network(),
+        iterations=1,
+        games_per_iteration=2,
+        self_play_workers=2,
+        match_start_config=_SHORT_MATCHES,
+        rng=random.Random(94),
+        checkpoint_dir=tmp_path / "checkpoints",
+        checkpoint_every=100,
+        metrics_path=tmp_path / "metrics.csv",
+    )
+
+    assert [m.iteration for m in history] == [1]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"match_discount": 0.0}, {"match_discount": 1.5}, {"match_win_weight": -0.1}],
+)
+def test_train_rejects_invalid_match_reward_settings(tmp_path: Path, kwargs):
+    with pytest.raises(ValueError):
+        train(
+            _small_network(),
+            iterations=1,
+            games_per_iteration=1,
+            rng=random.Random(95),
+            checkpoint_dir=tmp_path / "checkpoints",
+            metrics_path=tmp_path / "metrics.csv",
+            **kwargs,
+        )
+
+
+def _run_cli_capturing_train_kwargs(monkeypatch, tmp_path: Path, extra_args: list[str]) -> dict:
+    captured: dict = {}
+
+    def fake_train(network, **kwargs):
+        captured.update(kwargs)
+        return [train_module.IterationMetrics(1, 1, 0.0, 0.0, 0.0, 0.0, 1e-3)]
+
+    monkeypatch.setattr(train_module, "train", fake_train)
+    monkeypatch.setattr(sys, "argv", ["train.py", "--checkpoint-dir", str(tmp_path), *extra_args])
+    train_module._main()
+    return captured
+
+
+def test_cli_defaults_to_mixed_match_training_with_the_agreed_reward_settings(tmp_path: Path, monkeypatch):
+    kwargs = _run_cli_capturing_train_kwargs(monkeypatch, tmp_path, [])
+
+    assert kwargs["match_start_config"] == MatchStartConfig()
+    assert kwargs["match_win_weight"] == 1.0
+    assert kwargs["match_discount"] == 0.9
+
+
+def test_cli_match_flags_flow_into_train(tmp_path: Path, monkeypatch):
+    kwargs = _run_cli_capturing_train_kwargs(
+        monkeypatch,
+        tmp_path,
+        [
+            "--full-match-prob", "0.25",
+            "--max-remaining-gap", "400",
+            "--match-win-weight", "0.5",
+            "--match-discount", "0.8",
+        ],
+    )
+
+    assert kwargs["match_start_config"] == MatchStartConfig(full_match_prob=0.25, max_remaining_gap=400)
+    assert kwargs["match_win_weight"] == 0.5
+    assert kwargs["match_discount"] == 0.8
+
+
+def test_cli_single_round_flag_disables_match_training(tmp_path: Path, monkeypatch):
+    kwargs = _run_cli_capturing_train_kwargs(monkeypatch, tmp_path, ["--single-round"])
+
+    assert kwargs["match_start_config"] is None

@@ -11,7 +11,8 @@ import torch
 
 from tichu_env.combinations import Combo
 from tichu_env.encoding import encode_observation
-from tichu_env.env import TichuEnv
+from tichu_env.env import StepResult, TichuEnv
+from tichu_env.match import MatchEnv, MatchStart, MatchStartConfig, sample_match_start
 from tichu_env.scoring import TEAM_OF
 from tichu_env.state import NUM_PLAYERS, GameState
 
@@ -62,13 +63,131 @@ class Transition:
     """One trick-play decision by one player. `reward` is 0.0 on every
     transition except the last one of a player's round, which carries that
     round's outcome -- mirroring TichuEnv.step's own convention of only
-    surfacing a non-zero reward once the round is actually scored."""
+    surfacing a non-zero reward once the round is actually scored.
+
+    In match self-play (`play_self_play_match`) that same last transition also
+    carries `match_outcome` (z: +1 if the player's team won the match, -1 if
+    it lost) and `rounds_to_match_end` (K - k: how many rounds after this one
+    the match lasted), which the loss turns into the return
+    `reward / S + λ·γ^(K−k)·z` (see training.train). Both stay 0 everywhere
+    else, and on single-round self-play, so the return falls back to the
+    round margin alone."""
 
     observation: np.ndarray
     action_vectors: np.ndarray  # (num_candidates, ACTION_DIM) legal actions offered at this step
     chosen_index: int  # index into action_vectors of the action actually taken
     reward: float
     old_log_prob: float = 0.0  # log-probability of chosen_index under the rollout-time policy (PPO only)
+    match_outcome: float = 0.0
+    rounds_to_match_end: int = 0
+
+
+@dataclass(frozen=True)
+class MatchRollout:
+    """One self-play match. `trajectories` holds 4 per round, round by round
+    (index = round * 4 + seat); `round_scores` holds each round's
+    `score_round` deltas in the same order."""
+
+    start: MatchStart
+    trajectories: list[list[Transition]]
+    round_scores: list[tuple[int, int]]
+    team_scores: tuple[int, int]
+    winner: int
+
+
+def _choose_action(
+    network: TichuPolicyValueNet,
+    rng: random.Random,
+    opponent: object | None,
+    result: StepResult,
+    per_player: list[list[Transition]],
+) -> Combo | None:
+    """Picks the acting seat's move: `opponent`'s choice for team1 seats when
+    an opponent is set (recorded nowhere), otherwise a sample from `network`
+    recorded onto `per_player[seat]`."""
+    player = result.player
+    if opponent is not None and TEAM_OF[player] == TEAM_OF[1]:
+        return opponent.choose_action(result.state, result.legal_actions)
+
+    combos = [combo for combo, _ in result.legal_actions]
+    action_vectors = np.stack([vec for _, vec in result.legal_actions])
+    with torch.no_grad():
+        probs = network.action_probabilities(
+            torch.as_tensor(result.observation, dtype=torch.float32),
+            torch.as_tensor(action_vectors, dtype=torch.float32),
+        ).numpy()
+    chosen_index = rng.choices(range(len(combos)), weights=probs.tolist(), k=1)[0]
+    per_player[player].append(
+        Transition(
+            observation=result.observation,
+            action_vectors=action_vectors,
+            chosen_index=chosen_index,
+            reward=0.0,
+            old_log_prob=float(np.log(probs[chosen_index])),
+        )
+    )
+    return combos[chosen_index]
+
+
+def _label_round_ends(
+    per_player: list[list[Transition]],
+    round_scores: tuple[int, int],
+    match_outcome_of_team: tuple[float, float] = (0.0, 0.0),
+    rounds_to_match_end: int = 0,
+) -> None:
+    """Writes the round margin (own team minus opposing team) -- and, in a
+    match, z and K - k -- onto each non-empty trajectory's last transition."""
+    for player, trajectory in enumerate(per_player):
+        if not trajectory:
+            continue
+        own_team = TEAM_OF[player]
+        trajectory[-1] = replace(
+            trajectory[-1],
+            reward=float(round_scores[own_team] - round_scores[1 - own_team]),
+            match_outcome=match_outcome_of_team[own_team],
+            rounds_to_match_end=rounds_to_match_end,
+        )
+
+
+def play_self_play_match(
+    network: TichuPolicyValueNet,
+    rng: random.Random,
+    opponent: object | None = None,
+    start_config: MatchStartConfig = MatchStartConfig(),
+) -> MatchRollout:
+    """Match counterpart to `play_self_play_round`: draws a starting state
+    from `start_config` (see `tichu_env.match.sample_match_start`), plays
+    rounds via `MatchEnv` until the match is over, and labels each round's
+    last transition per seat with that round's margin, the match outcome z
+    and K - k. Seating, sampling and `opponent` handling are the same as in
+    `play_self_play_round`."""
+    start = sample_match_start(rng, start_config)
+    env = MatchEnv(rng=rng)
+    result = env.reset(start)
+    rounds: list[tuple[list[list[Transition]], tuple[int, int]]] = []
+    per_player: list[list[Transition]] = [[] for _ in range(NUM_PLAYERS)]
+
+    while not result.done:
+        chosen_combo = _choose_action(network, rng, opponent, result, per_player)
+        result = env.step(chosen_combo)
+        if "round_scores" in result.info:
+            rounds.append((per_player, result.info["round_scores"]))
+            per_player = [[] for _ in range(NUM_PLAYERS)]
+
+    winner = result.info["winner"]
+    outcome_of_team = (1.0, -1.0) if winner == 0 else (-1.0, 1.0)
+    trajectories: list[list[Transition]] = []
+    for round_index, (round_trajectories, round_scores) in enumerate(rounds):
+        _label_round_ends(round_trajectories, round_scores, outcome_of_team, len(rounds) - 1 - round_index)
+        trajectories.extend(round_trajectories)
+
+    return MatchRollout(
+        start=start,
+        trajectories=trajectories,
+        round_scores=[round_scores for _, round_scores in rounds],
+        team_scores=env.team_scores,
+        winner=winner,
+    )
 
 
 def play_self_play_round(
@@ -100,47 +219,12 @@ def play_self_play_round(
     env = TichuEnv(rng=rng)
     result = env.reset()
     per_player: list[list[Transition]] = [[] for _ in range(NUM_PLAYERS)]
-    opponent_team = TEAM_OF[1]
 
     while not result.done:
-        player = result.player
-
-        if opponent is not None and TEAM_OF[player] == opponent_team:
-            chosen_combo = opponent.choose_action(result.state, result.legal_actions)
-        else:
-            combos = [combo for combo, _ in result.legal_actions]
-            action_vectors = np.stack([vec for _, vec in result.legal_actions])
-
-            with torch.no_grad():
-                probs = network.action_probabilities(
-                    torch.as_tensor(result.observation, dtype=torch.float32),
-                    torch.as_tensor(action_vectors, dtype=torch.float32),
-                ).numpy()
-            chosen_index = rng.choices(range(len(combos)), weights=probs.tolist(), k=1)[0]
-
-            per_player[player].append(
-                Transition(
-                    observation=result.observation,
-                    action_vectors=action_vectors,
-                    chosen_index=chosen_index,
-                    reward=0.0,
-                    old_log_prob=float(np.log(probs[chosen_index])),
-                )
-            )
-            chosen_combo = combos[chosen_index]
-
+        chosen_combo = _choose_action(network, rng, opponent, result, per_player)
         result = env.step(chosen_combo)
 
-    team_scores = result.info["team_scores"]
-    for player in range(NUM_PLAYERS):
-        trajectory = per_player[player]
-        if not trajectory:
-            continue
-        own_team = TEAM_OF[player]
-        opponent_team = 1 - own_team
-        team_return = float(team_scores[own_team] - team_scores[opponent_team])
-        per_player[player][-1] = replace(trajectory[-1], reward=team_return)
-
+    _label_round_ends(per_player, result.info["team_scores"])
     return per_player
 
 
@@ -150,10 +234,15 @@ def generate_self_play_games(
     rng: random.Random | None = None,
     opponent: object | None = None,
     opponent_factory: Callable[[], object | None] | None = None,
+    match_start_config: MatchStartConfig | None = None,
 ) -> list[list[Transition]]:
-    """Runs `num_games` self-play rounds and returns a flat list of
-    per-player trajectories -- 4 per game, one per seat (some empty when
+    """Runs `num_games` self-play games and returns a flat list of
+    per-player trajectories -- 4 per round, one per seat (some empty when
     `opponent`/`opponent_factory` is set; see `play_self_play_round`).
+
+    With `match_start_config=None` each game is a single round
+    (`play_self_play_round`); otherwise each game is a whole match
+    (`play_self_play_match`) and contributes 4 trajectories per round played.
 
     `opponent_factory`, if set, is called once per game to pick that game's
     team1 opponent afresh (e.g. a random draw from an `OpponentPool` mixed
@@ -163,7 +252,11 @@ def generate_self_play_games(
     episodes: list[list[Transition]] = []
     for _ in range(num_games):
         game_opponent = opponent_factory() if opponent_factory is not None else opponent
-        episodes.extend(play_self_play_round(network, rng, opponent=game_opponent))
+        if match_start_config is None:
+            episodes.extend(play_self_play_round(network, rng, opponent=game_opponent))
+        else:
+            rollout = play_self_play_match(network, rng, opponent=game_opponent, start_config=match_start_config)
+            episodes.extend(rollout.trajectories)
     return episodes
 
 
@@ -182,6 +275,7 @@ def _run_self_play_worker(
     seed: int,
     opponent: object | None,
     opponent_factory: Callable[[], object | None] | None,
+    match_start_config: MatchStartConfig | None,
     result_queue: MPQueue,
 ) -> None:
     """Entry point for one self-play worker process (see
@@ -203,6 +297,7 @@ def _run_self_play_worker(
             rng=random.Random(seed),
             opponent=opponent,
             opponent_factory=opponent_factory,
+            match_start_config=match_start_config,
         )
         result_queue.put(("ok", episodes))
     except Exception as exc:  # noqa: BLE001 -- re-raised in the parent process via the queue
@@ -216,6 +311,7 @@ def generate_self_play_games_parallel(
     rng: random.Random | None = None,
     opponent: object | None = None,
     opponent_factory: Callable[[], object | None] | None = None,
+    match_start_config: MatchStartConfig | None = None,
 ) -> list[list[Transition]]:
     """Process-parallel counterpart to `generate_self_play_games`: splits
     `num_games` across up to `num_workers` subprocesses (each running the
@@ -256,6 +352,7 @@ def generate_self_play_games_parallel(
             rng=rng,
             opponent=opponent,
             opponent_factory=opponent_factory,
+            match_start_config=match_start_config,
         )
 
     game_counts = _split_game_counts(num_games, effective_workers)
@@ -266,7 +363,7 @@ def generate_self_play_games_parallel(
     processes = [
         ctx.Process(
             target=_run_self_play_worker,
-            args=(network, count, seed, opponent, opponent_factory, result_queue),
+            args=(network, count, seed, opponent, opponent_factory, match_start_config, result_queue),
         )
         for count, seed in zip(game_counts, seeds)
     ]
